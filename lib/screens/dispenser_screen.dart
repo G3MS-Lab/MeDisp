@@ -1,0 +1,62 @@
+import 'package:flutter/material.dart';
+
+import '../application/app_scope.dart';
+import '../domain/models.dart';
+import '../widgets/medis_app_bar.dart';
+import 'drug_form_screen.dart';
+
+class DispenserScreen extends StatelessWidget {
+  const DispenserScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = AppScope.of(context);
+    return Scaffold(
+      appBar: const MeDisAppBar('จัดการยา'),
+      body: ListView(padding: const EdgeInsets.all(24), children: [
+        Card(
+          child: ListTile(
+            leading: Icon(Icons.bluetooth, color: controller.connected ? Colors.green : Colors.grey),
+            title: Text(controller.connected ? 'MeDispenser พร้อมใช้งาน' : 'ยังไม่ได้เชื่อมต่อ'),
+            subtitle: Text(controller.connected ? 'แตะช่องว่างเพื่อเพิ่มยา' : 'เชื่อมต่อเครื่องก่อนเพิ่มยา'),
+            trailing: Switch(value: controller.connected, onChanged: (_) => controller.toggleConnection()),
+          ),
+        ),
+        const SizedBox(height: 22),
+        const Text('ช่องใส่ยา', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 14),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: controller.slots.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 15, crossAxisSpacing: 15, childAspectRatio: 1.08),
+          itemBuilder: (_, i) => _SlotCard(slot: controller.slots[i], enabled: controller.connected),
+        ),
+      ]),
+    );
+  }
+}
+
+class _SlotCard extends StatelessWidget {
+  const _SlotCard({required this.slot, required this.enabled});
+  final DispenserSlot slot;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: !enabled || !slot.isEmpty ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => DrugFormScreen(slot: slot))),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              CircleAvatar(radius: 27, backgroundColor: slot.isEmpty ? const Color(0xFFE8F0FC) : const Color(0xFFDFF6E5), child: Icon(slot.isEmpty ? Icons.add : Icons.medication, color: slot.isEmpty ? const Color(0xFF6AA6FF) : Colors.green, size: 30)),
+              const SizedBox(height: 10),
+              Text('ช่อง ${slot.number}', style: const TextStyle(fontWeight: FontWeight.w700)),
+              Text(slot.drug?.name ?? 'ว่าง', maxLines: 1, overflow: TextOverflow.ellipsis),
+              Text(slot.isEmpty ? 'แตะเพื่อเพิ่มยา' : '${slot.remaining}/${slot.capacity} เม็ด', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            ]),
+          ),
+        ),
+      );
+}
