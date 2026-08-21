@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 class MeDisAppBar extends StatelessWidget implements PreferredSizeWidget {
-  const MeDisAppBar(this.title, {super.key});
+  const MeDisAppBar(this.title, {this.actions, super.key});
   final String title;
+  final List<Widget>? actions;
 
   @override
   Size get preferredSize => const Size.fromHeight(76);
@@ -13,6 +14,8 @@ class MeDisAppBar extends StatelessWidget implements PreferredSizeWidget {
         backgroundColor: const Color(0xFFAACBFA),
         foregroundColor: Colors.white,
         centerTitle: true,
-        title: Text(title, style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w600)),
+        actions: actions,
+        title: Text(title,
+            style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w600)),
       );
 }
