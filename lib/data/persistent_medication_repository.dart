@@ -31,6 +31,7 @@ class PersistentMedicationRepository implements MedicationRepository {
         'notes': drug.notes,
         'label_image_path': drug.labelImagePath,
         'added_at': drug.addedAt?.toIso8601String(),
+        'stopped_at': drug.stoppedAt?.toIso8601String(),
         'instructions': drug.instructions
             .map((dose) => {
                   'meal': dose.meal.name,
@@ -48,6 +49,9 @@ class PersistentMedicationRepository implements MedicationRepository {
         addedAt: json['added_at'] == null
             ? null
             : DateTime.parse(json['added_at'] as String),
+        stoppedAt: json['stopped_at'] == null
+            ? null
+            : DateTime.parse(json['stopped_at'] as String),
         instructions: (json['instructions'] as List)
             .cast<Map<String, dynamic>>()
             .map((dose) => DoseInstruction(
@@ -142,6 +146,7 @@ class PersistentMedicationRepository implements MedicationRepository {
         heightCm: (json['height_cm'] as num?)?.toDouble(),
         weightKg: (json['weight_kg'] as num?)?.toDouble(),
         medicalConditions: (json['medical_conditions'] as String?) ?? '',
+        drugAllergies: (json['drug_allergies'] as String?) ?? '',
         caregiverName: (json['caregiver_name'] as String?) ?? '',
         caregiverRelationship:
             (json['caregiver_relationship'] as String?) ?? '',
@@ -164,6 +169,7 @@ class PersistentMedicationRepository implements MedicationRepository {
           'height_cm': profile.heightCm,
           'weight_kg': profile.weightKg,
           'medical_conditions': profile.medicalConditions,
+          'drug_allergies': profile.drugAllergies,
           'caregiver_name': profile.caregiverName,
           'caregiver_relationship': profile.caregiverRelationship,
           'caregiver_phone': profile.caregiverPhone,

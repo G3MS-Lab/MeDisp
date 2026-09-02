@@ -33,6 +33,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       'height': TextEditingController(text: profile.heightCm?.toString() ?? ''),
       'weight': TextEditingController(text: profile.weightKg?.toString() ?? ''),
       'conditions': TextEditingController(text: profile.medicalConditions),
+      'drugAllergies': TextEditingController(text: profile.drugAllergies),
       'caregiverName': TextEditingController(text: profile.caregiverName),
       'relationship':
           TextEditingController(text: profile.caregiverRelationship),
@@ -82,6 +83,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         heightCm: double.tryParse(field('height').text.trim()),
         weightKg: double.tryParse(field('weight').text.trim()),
         medicalConditions: field('conditions').text.trim(),
+        drugAllergies: field('drugAllergies').text.trim(),
         caregiverName: field('caregiverName').text.trim(),
         caregiverRelationship: field('relationship').text.trim(),
         caregiverPhone: field('caregiverPhone').text.trim(),
@@ -167,6 +169,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   controller: field('conditions'),
                   label: 'โรคประจำตัว',
                   icon: Icons.medical_information_outlined,
+                  maxLines: 2),
+              _Input(
+                  controller: field('drugAllergies'),
+                  label: 'ประวัติแพ้ยา',
+                  icon: Icons.warning_amber_rounded,
                   maxLines: 2),
             ]),
             _FormSection(title: 'ผู้ดูแลและกรณีฉุกเฉิน', children: [

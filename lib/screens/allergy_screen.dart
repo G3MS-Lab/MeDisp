@@ -25,7 +25,7 @@ class _AllergyScreenState extends State<AllergyScreen> {
         .toList();
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7FC),
-      appBar: const MeDisAppBar('การแพ้และอาการ'),
+      appBar: const MeDisAppBar('อาการไม่พึงประสงค์'),
       floatingActionButton: FloatingActionButton.extended(
           onPressed: () => _showForm(context),
           icon: const Icon(Icons.add),
@@ -158,19 +158,16 @@ class _AllergyFormSheetState extends State<_AllergyFormSheet> {
                         color: Colors.black12,
                         borderRadius: BorderRadius.circular(4)))),
             const SizedBox(height: 20),
-            const Text('บันทึกอาการแพ้',
+            const Text('บันทึกอาการไม่พึงประสงค์',
                 style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800)),
             const SizedBox(height: 16),
-            TextField(
-                controller: description,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                    labelText: 'รายละเอียดเบื้องต้น',
-                    prefixIcon: Icon(Icons.notes_outlined))),
-            const SizedBox(height: 14),
+            const Text('เลือกอาการ',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
             Wrap(
                 spacing: 7,
-                children: ['มีไข้', 'มึนหัว', 'อาเจียน', 'เจ็บคอ', 'มีผื่น']
+                runSpacing: 7,
+                children: ['คลื่นไส้', 'อาเจียน', 'เวียนศีรษะ', 'ผื่น']
                     .map((item) => FilterChip(
                         label: Text(item),
                         selected: symptoms.contains(item),
@@ -178,20 +175,44 @@ class _AllergyFormSheetState extends State<_AllergyFormSheet> {
                             ? symptoms.add(item)
                             : symptoms.remove(item))))
                     .toList()),
+            const SizedBox(height: 14),
+            TextField(
+                controller: description,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                    labelText: 'รายละเอียดเพิ่มเติม',
+                    hintText: 'เช่น เกิดอาการหลังทานยาชนิดใดและนานเท่าไร',
+                    prefixIcon: Icon(Icons.notes_outlined))),
             const SizedBox(height: 12),
             OutlinedButton.icon(
                 onPressed: pickImage,
                 icon: const Icon(Icons.add_a_photo_outlined),
-                label: Text(
-                    imagePath == null ? 'ถ่าย / อัปโหลดรูป' : 'แนบรูปแล้ว'),
+                label: Text(imagePath == null
+                    ? symptoms.contains('ผื่น')
+                        ? 'ถ่าย / อัปโหลดรูปผื่น (จำเป็น)'
+                        : 'ถ่าย / อัปโหลดรูป'
+                    : 'แนบรูปแล้ว'),
                 style: OutlinedButton.styleFrom(
                     minimumSize: const Size.fromHeight(50))),
             const SizedBox(height: 14),
             FilledButton(
-                onPressed: () => Navigator.pop(
-                    context,
-                    _AllergyDraft(
-                        description.text.trim(), Set.of(symptoms), imagePath)),
+                onPressed: () {
+                  if (symptoms.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('กรุณาเลือกอาการอย่างน้อย 1 รายการ')));
+                    return;
+                  }
+                  if (symptoms.contains('ผื่น') && imagePath == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content:
+                            Text('เมื่อเลือกอาการผื่น กรุณาถ่ายหรือแนบรูป')));
+                    return;
+                  }
+                  Navigator.pop(
+                      context,
+                      _AllergyDraft(description.text.trim(), Set.of(symptoms),
+                          imagePath));
+                },
                 style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(52)),
                 child: const Text('บันทึกอาการ')),

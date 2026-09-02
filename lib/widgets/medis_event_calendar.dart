@@ -149,7 +149,7 @@ class MeDisEventCalendar extends StatelessWidget {
               const Row(mainAxisSize: MainAxisSize.min, children: [
                 Icon(Icons.warning_rounded, size: 17, color: Color(0xFFE04B4B)),
                 SizedBox(width: 5),
-                Text('อาการแพ้', style: TextStyle(fontSize: 12))
+                Text('อาการไม่พึงประสงค์', style: TextStyle(fontSize: 12))
               ])
           ]),
         ]),

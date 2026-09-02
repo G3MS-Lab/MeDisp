@@ -205,6 +205,11 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> clearSlot(int slotNumber) async {
+    final slot = slots.where((item) => item.number == slotNumber).firstOrNull;
+    if (slot?.drug != null) {
+      await _medications.saveDrug(slot!.drug!.copyWith(stoppedAt: _now()));
+      drugs = await _medications.drugs();
+    }
     await _dispenser.clearSlot(slotNumber);
     slots = await _dispenser.slots();
     _rebuildMeals();

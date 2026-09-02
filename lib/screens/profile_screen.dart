@@ -42,6 +42,9 @@ class ProfileScreen extends StatelessWidget {
                     profile.weightKg == null ? '' : '${profile.weightKg} กก.'),
                 _InfoRow(Icons.medical_information_outlined, 'โรคประจำตัว',
                     profile.medicalConditions),
+                _InfoRow(Icons.warning_amber_rounded, 'ประวัติแพ้ยา',
+                    profile.drugAllergies,
+                    valueColor: const Color(0xFFD83B3B)),
               ],
             ),
             _ProfileSection(

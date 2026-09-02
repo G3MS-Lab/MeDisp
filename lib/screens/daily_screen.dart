@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../application/app_scope.dart';
 import '../domain/meal_schedule.dart';
 import '../domain/models.dart';
+import '../widgets/local_image.dart';
 import 'drug_detail_screen.dart';
 
 class DailyScreen extends StatelessWidget {
@@ -192,7 +193,13 @@ class _MealCardState extends State<_MealCard> {
                   child: FilledButton(
                       onPressed: meal.completed || !widget.isCurrent
                           ? null
-                          : () async => widget.onComplete(),
+                          : () async {
+                              final confirmed =
+                                  await _confirmMedicine(context, meal.drugs);
+                              if (confirmed && context.mounted) {
+                                await widget.onComplete();
+                              }
+                            },
                       child: Text(meal.completed
                           ? 'ทานแล้ว'
                           : widget.isCurrent
@@ -204,6 +211,72 @@ class _MealCardState extends State<_MealCard> {
       ),
     );
   }
+}
+
+Future<bool> _confirmMedicine(
+    BuildContext context, List<DrugDose> doses) async {
+  return await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('ตรวจสอบยาก่อนทาน'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                      'ยาที่เตรียมไว้ตรงกับรูปและรายการต่อไปนี้หรือไม่?'),
+                  const SizedBox(height: 14),
+                  ...doses.map((dose) => Card(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        clipBehavior: Clip.antiAlias,
+                        child: Row(children: [
+                          SizedBox(
+                            width: 82,
+                            height: 82,
+                            child: dose.drug.labelImagePath == null
+                                ? const ColoredBox(
+                                    color: Color(0xFFEAF2FD),
+                                    child: Icon(
+                                        Icons.image_not_supported_outlined,
+                                        color: Color(0xFF7FA9DC)))
+                                : localImage(dose.drug.labelImagePath!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                        Icons.broken_image_outlined)),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(dose.drug.name,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w800)),
+                                Text('${dose.quantity} เม็ด'),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                        ]),
+                      )),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('ยังไม่ทาน')),
+            FilledButton.icon(
+                onPressed: () => Navigator.pop(context, true),
+                icon: const Icon(Icons.check),
+                label: const Text('ตรงกับรูป ยืนยันทาน')),
+          ],
+        ),
+      ) ??
+      false;
 }
 
 class _DoseGroup extends StatelessWidget {

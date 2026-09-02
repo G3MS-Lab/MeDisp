@@ -28,14 +28,14 @@ void main() {
           ],
           allergies: [
             AllergyRecord(
-                date: date, description: 'rash', symptoms: const {'มีผื่น'})
+                date: date, description: 'rash', symptoms: const {'ผื่น'})
           ],
           onDateSelected: (_) {})
     ]))));
 
     expect(find.text('สิงหาคม 2569'), findsOneWidget);
     expect(find.text('ยาเช้า'), findsOneWidget);
-    expect(find.text('อาการแพ้'), findsOneWidget);
+    expect(find.text('อาการไม่พึงประสงค์'), findsOneWidget);
     expect(find.byIcon(Icons.warning_rounded), findsNWidgets(2));
   });
 

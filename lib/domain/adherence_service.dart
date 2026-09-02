@@ -1,6 +1,6 @@
 import 'models.dart';
 
-enum AdherencePeriod { week, month }
+enum AdherencePeriod { day, week, month, custom }
 
 class DrugAdherence {
   const DrugAdherence(
@@ -34,16 +34,27 @@ class AdherenceService {
     required DateTime now,
     required List<Drug> drugs,
     required List<IntakeRecord> intakes,
+    DateTime? rangeStart,
+    DateTime? rangeEnd,
   }) {
     final today = DateTime(now.year, now.month, now.day);
-    final start = period == AdherencePeriod.week
-        ? today.subtract(Duration(days: today.weekday - 1))
-        : DateTime(today.year, today.month);
+    final requestedEnd = rangeEnd == null
+        ? today
+        : DateTime(rangeEnd.year, rangeEnd.month, rangeEnd.day);
+    final end = requestedEnd.isAfter(today) ? today : requestedEnd;
+    final start = switch (period) {
+      AdherencePeriod.day => end,
+      AdherencePeriod.week => end.subtract(Duration(days: end.weekday - 1)),
+      AdherencePeriod.month => DateTime(end.year, end.month),
+      AdherencePeriod.custom => rangeStart == null
+          ? end
+          : DateTime(rangeStart.year, rangeStart.month, rangeStart.day),
+    };
     final actualEvents = <String>{};
     for (final intake in intakes) {
       final date = DateTime(
           intake.takenAt.year, intake.takenAt.month, intake.takenAt.day);
-      if (date.isBefore(start) || date.isAfter(today)) continue;
+      if (date.isBefore(start) || date.isAfter(end)) continue;
       for (final dose in intake.doses) {
         actualEvents.add(
             '${dose.drug.id}|${date.toIso8601String()}|${intake.meal.name}');
@@ -59,11 +70,16 @@ class AdherenceService {
           : DateTime(
               drug.addedAt!.year, drug.addedAt!.month, drug.addedAt!.day);
       final activeStart = added.isAfter(start) ? added : start;
+      final stopped = drug.stoppedAt == null
+          ? end
+          : DateTime(
+              drug.stoppedAt!.year, drug.stoppedAt!.month, drug.stoppedAt!.day);
+      final activeEnd = stopped.isBefore(end) ? stopped : end;
       var expected = 0;
       var taken = 0;
-      if (!activeStart.isAfter(today)) {
+      if (!activeStart.isAfter(activeEnd)) {
         for (var date = activeStart;
-            !date.isAfter(today);
+            !date.isAfter(activeEnd);
             date = date.add(const Duration(days: 1))) {
           for (final instruction in drug.instructions) {
             expected++;
@@ -80,7 +96,7 @@ class AdherenceService {
     }
     return AdherenceReport(
         start: start,
-        end: today,
+        end: end,
         drugs: results,
         taken: totalTaken,
         expected: totalExpected);

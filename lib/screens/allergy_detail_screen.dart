@@ -10,7 +10,7 @@ class AllergyDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: const MeDisAppBar('รายละเอียดอาการแพ้'),
+        appBar: const MeDisAppBar('รายละเอียดอาการไม่พึงประสงค์'),
         body: ListView(padding: const EdgeInsets.all(24), children: [
           if (record.imagePath != null) ...[
             ClipRRect(

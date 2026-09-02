@@ -41,13 +41,25 @@ class Drug {
       required this.instructions,
       this.labelImagePath,
       this.addedAt,
+      this.stoppedAt,
       this.notes = ''});
   final String id;
   final String name;
   final List<DoseInstruction> instructions;
   final String? labelImagePath;
   final DateTime? addedAt;
+  final DateTime? stoppedAt;
   final String notes;
+
+  Drug copyWith({DateTime? stoppedAt}) => Drug(
+        id: id,
+        name: name,
+        instructions: instructions,
+        labelImagePath: labelImagePath,
+        addedAt: addedAt,
+        stoppedAt: stoppedAt ?? this.stoppedAt,
+        notes: notes,
+      );
 
   DoseInstruction? instructionFor(MealType meal) {
     for (final instruction in instructions) {
@@ -117,6 +129,7 @@ class PatientProfile {
       this.heightCm,
       this.weightKg,
       this.medicalConditions = '',
+      this.drugAllergies = '',
       this.caregiverName = '',
       this.caregiverRelationship = '',
       this.caregiverPhone = '',
@@ -131,6 +144,7 @@ class PatientProfile {
   final double? heightCm;
   final double? weightKg;
   final String medicalConditions;
+  final String drugAllergies;
   final String caregiverName;
   final String caregiverRelationship;
   final String caregiverPhone;

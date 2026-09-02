@@ -13,6 +13,26 @@ class AdherenceScreen extends StatefulWidget {
 
 class _AdherenceScreenState extends State<AdherenceScreen> {
   AdherencePeriod period = AdherencePeriod.week;
+  DateTime rangeStart = DateUtils.dateOnly(DateTime.now());
+  DateTime rangeEnd = DateUtils.dateOnly(DateTime.now());
+
+  Future<void> _selectRange() async {
+    final selected = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      initialDateRange: DateTimeRange(start: rangeStart, end: rangeEnd),
+      helpText: 'เลือกช่วงวันที่สำหรับ Adherence Rate',
+      saveText: 'เลือกช่วงนี้',
+    );
+    if (selected != null) {
+      setState(() {
+        period = AdherencePeriod.custom;
+        rangeStart = selected.start;
+        rangeEnd = selected.end;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,25 +41,48 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
         period: period,
         now: DateTime.now(),
         drugs: controller.drugs,
-        intakes: controller.intakeHistory);
+        intakes: controller.intakeHistory,
+        rangeStart: rangeStart,
+        rangeEnd: rangeEnd);
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7FC),
       appBar: const MeDisAppBar('Adherence Rate'),
       body: ListView(padding: const EdgeInsets.all(20), children: [
-        SegmentedButton<AdherencePeriod>(
-          segments: const [
-            ButtonSegment(
-                value: AdherencePeriod.week,
-                icon: Icon(Icons.view_week_outlined),
-                label: Text('สัปดาห์นี้')),
-            ButtonSegment(
-                value: AdherencePeriod.month,
-                icon: Icon(Icons.calendar_month_outlined),
-                label: Text('เดือนนี้')),
+        DropdownButtonFormField<AdherencePeriod>(
+          initialValue: period,
+          decoration: const InputDecoration(
+            labelText: 'รูปแบบรายงาน',
+            prefixIcon: Icon(Icons.bar_chart_outlined),
+          ),
+          items: const [
+            DropdownMenuItem(value: AdherencePeriod.day, child: Text('รายวัน')),
+            DropdownMenuItem(
+                value: AdherencePeriod.week, child: Text('รายสัปดาห์')),
+            DropdownMenuItem(
+                value: AdherencePeriod.month, child: Text('รายเดือน')),
+            DropdownMenuItem(
+                value: AdherencePeriod.custom, child: Text('กำหนดช่วงวันที่')),
           ],
-          selected: {period},
-          showSelectedIcon: false,
-          onSelectionChanged: (value) => setState(() => period = value.single),
+          onChanged: (value) {
+            if (value == null) return;
+            if (value == AdherencePeriod.custom) {
+              _selectRange();
+            } else {
+              setState(() {
+                period = value;
+                rangeEnd = DateUtils.dateOnly(DateTime.now());
+              });
+            }
+          },
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: _selectRange,
+          icon: const Icon(Icons.date_range_outlined),
+          label: Text(
+              'ตั้งแต่ ${_shortDate(report.start)} ถึง ${_shortDate(report.end)}'),
+          style:
+              OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
         ),
         const SizedBox(height: 18),
         _OverallCard(report: report),
@@ -198,3 +241,6 @@ Color _rateColor(double rate) {
 
 String _dateRange(DateTime start, DateTime end) =>
     '${start.day}/${start.month}/${start.year + 543} – ${end.day}/${end.month}/${end.year + 543}';
+
+String _shortDate(DateTime value) =>
+    '${value.day}/${value.month}/${value.year + 543}';

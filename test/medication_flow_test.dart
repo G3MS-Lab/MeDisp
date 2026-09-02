@@ -41,6 +41,29 @@ void main() {
     expect(report.drugs.single.rate, .25);
   });
 
+  test('adherence supports custom ranges and stops counting after drug stop',
+      () {
+    final drug = Drug(
+        id: 'stopped-drug',
+        name: 'Stopped medicine',
+        addedAt: DateTime(2026, 8, 1),
+        stoppedAt: DateTime(2026, 8, 3),
+        instructions: const [
+          DoseInstruction(meal: MealType.breakfast, quantity: 1)
+        ]);
+    final report = const AdherenceService().calculate(
+        period: AdherencePeriod.custom,
+        now: DateTime(2026, 8, 10),
+        rangeStart: DateTime(2026, 8, 1),
+        rangeEnd: DateTime(2026, 8, 7),
+        drugs: [drug],
+        intakes: const []);
+
+    expect(report.start, DateTime(2026, 8, 1));
+    expect(report.end, DateTime(2026, 8, 7));
+    expect(report.expected, 3);
+  });
+
   test('meal schedule selects the nearest configured meal across midnight', () {
     const meals = [
       MealPlan(
@@ -128,6 +151,9 @@ void main() {
     expect(restored.slots.first.remaining, 8);
     expect(restored.intakeHistory.single.meal, MealType.breakfast);
     expect(restored.todayMeals.single.completed, isTrue);
+
+    await restored.clearSlot(1);
+    expect(restored.drugs.single.stoppedAt, DateTime(2026, 1, 1, 7, 5));
   });
 
   test('profile and reminder settings persist per authenticated user',
@@ -152,6 +178,7 @@ void main() {
         heightCm: 165,
         weightKg: 55,
         medicalConditions: 'ความดันโลหิตสูง',
+        drugAllergies: 'แพ้ยาเพนิซิลลิน',
         caregiverName: 'Caregiver',
         caregiverRelationship: 'บุตร',
         caregiverPhone: '0891111111',
@@ -172,6 +199,7 @@ void main() {
     expect(restored.profile.heightCm, 165);
     expect(restored.profile.weightKg, 55);
     expect(restored.profile.caregiverName, 'Caregiver');
+    expect(restored.profile.drugAllergies, 'แพ้ยาเพนิซิลลิน');
     expect(restored.profile.emergencyPhone, '1669');
     expect(restored.alertSettings.minutesBefore, 30);
     expect(restored.alertSettings.repeatCount, 3);

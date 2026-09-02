@@ -130,10 +130,9 @@ class _DrugFormScreenState extends State<DrugFormScreen> {
                         color: const Color(0xFFF4F7FC),
                         borderRadius: BorderRadius.circular(14)),
                     child: Row(children: [
-                      Expanded(
-                          child: Text('ความจุ ${widget.slot.capacity} เม็ด',
-                              style:
-                                  const TextStyle(color: Color(0xFF68778B)))),
+                      const Expanded(
+                          child: Text('จำนวนยาที่ใส่',
+                              style: TextStyle(color: Color(0xFF68778B)))),
                       IconButton(
                           onPressed: quantity > 1
                               ? () => setState(() => quantity--)

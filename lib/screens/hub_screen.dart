@@ -27,7 +27,8 @@ class HubScreen extends StatelessWidget {
       _Menu(
           'จัดการยา', Icons.medical_services_outlined, const DispenserScreen()),
       _Menu('ประวัติยาทั้งหมด', Icons.history_rounded, const AllDrugsScreen()),
-      _Menu('การแพ้', Icons.health_and_safety_outlined, const AllergyScreen()),
+      _Menu('อาการไม่พึงประสงค์', Icons.health_and_safety_outlined,
+          const AllergyScreen()),
     ];
     return ListView(
       padding: const EdgeInsets.fromLTRB(24, 34, 24, 24),

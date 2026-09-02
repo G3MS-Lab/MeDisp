@@ -27,13 +27,20 @@ class AllDrugsScreen extends StatelessWidget {
                   leading: const CircleAvatar(
                       child: Icon(Icons.medication_outlined)),
                   title: Text(drug.name),
-                  subtitle: Text(drug.instructions
-                      .map((dose) =>
-                          '${dose.meal.label} ${dose.quantity} เม็ด ${dose.beforeFood ? 'ก่อนอาหาร' : 'หลังอาหาร'}')
-                      .join(' · ')),
+                  subtitle: Text([
+                    drug.instructions
+                        .map((dose) =>
+                            '${dose.meal.label} ${dose.quantity} เม็ด ${dose.beforeFood ? 'ก่อนอาหาร' : 'หลังอาหาร'}')
+                        .join(' · '),
+                    if (drug.stoppedAt != null)
+                      'หยุดยาเมื่อ ${_date(drug.stoppedAt!)}'
+                  ].join('\n')),
                   trailing: const Icon(Icons.chevron_right)));
         },
       ),
     );
   }
 }
+
+String _date(DateTime value) =>
+    '${value.day}/${value.month}/${value.year + 543}';

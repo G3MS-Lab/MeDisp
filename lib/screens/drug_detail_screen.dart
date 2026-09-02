@@ -101,7 +101,14 @@ class _DrugHeader extends StatelessWidget {
                         style: const TextStyle(
                             fontSize: 24, fontWeight: FontWeight.w800)),
                     Text('${drug.instructions.length} ช่วงเวลาต่อวัน',
-                        style: const TextStyle(color: Color(0xFF68778B)))
+                        style: const TextStyle(color: Color(0xFF68778B))),
+                    if (drug.stoppedAt != null)
+                      Text(
+                        'หยุดยาเมื่อ ${drug.stoppedAt!.day}/${drug.stoppedAt!.month}/${drug.stoppedAt!.year + 543}',
+                        style: const TextStyle(
+                            color: Color(0xFFD83B3B),
+                            fontWeight: FontWeight.w700),
+                      )
                   ]))
             ]),
           )
@@ -144,12 +151,6 @@ class _InventorySection extends StatelessWidget {
                           icon: Icons.medication_outlined,
                           label: 'คงเหลือ',
                           value: '$remaining เม็ด')),
-                  const SizedBox(width: 10),
-                  Expanded(
-                      child: _StatBox(
-                          icon: Icons.inventory_outlined,
-                          label: 'ความจุ',
-                          value: '$capacity เม็ด')),
                 ]),
                 const SizedBox(height: 15),
                 Row(children: [

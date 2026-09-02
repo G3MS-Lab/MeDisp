@@ -118,7 +118,7 @@ class _SlotCard extends StatelessWidget {
               Text(
                   slot.isEmpty
                       ? 'แตะเพื่อเพิ่มยา'
-                      : '${slot.remaining}/${slot.capacity} เม็ด',
+                      : 'คงเหลือ ${slot.remaining} เม็ด',
                   style: const TextStyle(fontSize: 12, color: Colors.grey)),
             ]),
           ),
