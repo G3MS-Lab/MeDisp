@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'application/app_controller.dart';
@@ -22,8 +23,12 @@ Future<void> main() async {
   final controller =
       AppController(authRepository, dispenserRepository, medicationRepository);
   await controller.initialize();
-  runApp(AppScope(
-      controller: controller, child: MeDisApp(controller: controller)));
+  runApp(
+    AppScope(
+      controller: controller,
+      child: MeDisApp(controller: controller),
+    ),
+  );
 }
 
 class MeDisApp extends StatefulWidget {
@@ -49,6 +54,24 @@ class _MeDisAppState extends State<MeDisApp> {
   Widget build(BuildContext context) => MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'MeDis',
+        builder: (context, child) {
+          if (!kIsWeb) {
+            return child ?? const SizedBox.shrink();
+          }
+
+          return ColoredBox(
+            color: const Color(0xFFE5E7EB),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 430),
+                child: ColoredBox(
+                  color: Colors.white,
+                  child: child ?? const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          );
+        },
         theme: ThemeData(
           useMaterial3: true,
           scaffoldBackgroundColor: Colors.white,
