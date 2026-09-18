@@ -167,30 +167,60 @@ class _AllergyFormSheetState extends State<_AllergyFormSheet> {
             Wrap(
                 spacing: 7,
                 runSpacing: 7,
-                children: ['คลื่นไส้', 'อาเจียน', 'เวียนศีรษะ', 'ผื่น']
+                children: const [
+                  ('คลื่นไส้', false),
+                  ('อาเจียน', false),
+                  ('เวียนศีรษะ', false),
+                  ('ผื่น', true),
+                  ('อื่นๆ', true),
+                ]
                     .map((item) => FilterChip(
-                        label: Text(item),
-                        selected: symptoms.contains(item),
+                        label: Text(item.$2 ? '${item.$1} *' : item.$1),
+                        selected: symptoms.contains(item.$1),
                         onSelected: (value) => setState(() => value
-                            ? symptoms.add(item)
-                            : symptoms.remove(item))))
+                            ? symptoms.add(item.$1)
+                            : symptoms.remove(item.$1))))
                     .toList()),
+            const SizedBox(height: 6),
+            Text(
+              '* หมายถึง จำเป็นต้องระบุรายละเอียดเพิ่มเติม',
+              style: TextStyle(
+                fontSize: 12,
+                color: (symptoms.contains('ผื่น') || symptoms.contains('อื่นๆ'))
+                    ? Colors.red.shade700
+                    : const Color(0xFF8291A5),
+                fontWeight:
+                    (symptoms.contains('ผื่น') || symptoms.contains('อื่นๆ'))
+                        ? FontWeight.w600
+                        : FontWeight.normal,
+              ),
+            ),
             const SizedBox(height: 14),
             TextField(
                 controller: description,
                 maxLines: 3,
-                decoration: const InputDecoration(
-                    labelText: 'รายละเอียดเพิ่มเติม',
-                    hintText: 'เช่น เกิดอาการหลังทานยาชนิดใดและนานเท่าไร',
-                    prefixIcon: Icon(Icons.notes_outlined))),
+                decoration: InputDecoration(
+                    labelText: (symptoms.contains('ผื่น') ||
+                            symptoms.contains('อื่นๆ'))
+                        ? 'รายละเอียดเพิ่มเติม * (จำเป็น)'
+                        : 'รายละเอียดเพิ่มเติม',
+                    labelStyle: TextStyle(
+                      color: (symptoms.contains('ผื่น') ||
+                              symptoms.contains('อื่นๆ'))
+                          ? Colors.red.shade700
+                          : null,
+                    ),
+                    hintText: (symptoms.contains('ผื่น') ||
+                            symptoms.contains('อื่นๆ'))
+                        ? 'จำเป็นต้องระบุรายละเอียด เช่น ลักษณะผื่นหรืออาการอื่นๆ'
+                        : 'เช่น เกิดอาการหลังทานยาชนิดใดและนานเท่าไร',
+                    prefixIcon: const Icon(Icons.notes_outlined))),
             const SizedBox(height: 12),
             OutlinedButton.icon(
                 onPressed: pickImage,
                 icon: const Icon(Icons.add_a_photo_outlined),
                 label: Text(imagePath == null
-                    ? symptoms.contains('ผื่น')
-                        ? 'ถ่าย / อัปโหลดรูปผื่น (จำเป็น)'
-                        : 'ถ่าย / อัปโหลดรูป'
+                    ? 'ถ่าย / อัปโหลดรูป (ถ้ามี)'
                     : 'แนบรูปแล้ว'),
                 style: OutlinedButton.styleFrom(
                     minimumSize: const Size.fromHeight(50))),
@@ -202,10 +232,16 @@ class _AllergyFormSheetState extends State<_AllergyFormSheet> {
                         content: Text('กรุณาเลือกอาการอย่างน้อย 1 รายการ')));
                     return;
                   }
-                  if (symptoms.contains('ผื่น') && imagePath == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content:
-                            Text('เมื่อเลือกอาการผื่น กรุณาถ่ายหรือแนบรูป')));
+                  final needsDetails = symptoms.contains('ผื่น') ||
+                      symptoms.contains('อื่นๆ');
+                  if (needsDetails && description.text.trim().isEmpty) {
+                    final missingItems = [
+                      if (symptoms.contains('ผื่น')) 'ผื่น',
+                      if (symptoms.contains('อื่นๆ')) 'อื่นๆ',
+                    ].join(' หรือ ');
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(
+                            'เมื่อเลือกอาการ $missingItems กรุณาระบุรายละเอียดเพิ่มเติม')));
                     return;
                   }
                   Navigator.pop(
