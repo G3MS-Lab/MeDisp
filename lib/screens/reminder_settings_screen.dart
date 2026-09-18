@@ -56,12 +56,20 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen> {
                           title: Text('มื้อ${meal.label}',
                               style:
                                   const TextStyle(fontWeight: FontWeight.w700)),
-                          subtitle: Text(times[meal]!.format(context),
+                          subtitle: Text(times[meal]!.format24Hour(),
                               style: const TextStyle(fontSize: 19)),
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () async {
                             final value = await showTimePicker(
-                                context: context, initialTime: times[meal]!);
+                              context: context,
+                              initialTime: times[meal]!,
+                              initialEntryMode: TimePickerEntryMode.inputOnly,
+                              builder: (context, child) => MediaQuery(
+                                data: MediaQuery.of(context)
+                                    .copyWith(alwaysUse24HourFormat: true),
+                                child: child!,
+                              ),
+                            );
                             if (value != null) {
                               setState(() => times[meal] = value);
                             }

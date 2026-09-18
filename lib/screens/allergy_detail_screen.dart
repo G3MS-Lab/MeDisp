@@ -32,7 +32,7 @@ class AllergyDetailScreen extends StatelessWidget {
                   const TextStyle(fontSize: 25, fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
           Text(
-              'วันที่ ${record.date.day}/${record.date.month}/${record.date.year + 543} · ${TimeOfDay.fromDateTime(record.date).format(context)}',
+              'วันที่ ${record.date.day}/${record.date.month}/${record.date.year + 543} · ${record.date.formatTime24Hour()}',
               style: const TextStyle(color: Colors.grey)),
           const SizedBox(height: 20),
           const Text('อาการที่บันทึก',

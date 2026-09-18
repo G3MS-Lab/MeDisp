@@ -54,7 +54,7 @@ class _AllergyScreenState extends State<AllergyScreen> {
                 leading: const Icon(Icons.health_and_safety, color: Colors.red),
                 title: Text(record.description),
                 subtitle: Text(
-                    '${TimeOfDay.fromDateTime(record.date).format(context)} · ${record.symptoms.isEmpty ? 'ไม่ได้ระบุอาการ' : record.symptoms.join(' · ')}'),
+                    '${record.date.formatTime24Hour()} · ${record.symptoms.isEmpty ? 'ไม่ได้ระบุอาการ' : record.symptoms.join(' · ')}'),
                 trailing: const Icon(Icons.chevron_right)))),
       ]),
     );

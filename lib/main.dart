@@ -55,8 +55,13 @@ class _MeDisAppState extends State<MeDisApp> {
         debugShowCheckedModeBanner: false,
         title: 'MeDis',
         builder: (context, child) {
+          final content = MediaQuery(
+            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+            child: child ?? const SizedBox.shrink(),
+          );
+
           if (!kIsWeb) {
-            return child ?? const SizedBox.shrink();
+            return content;
           }
 
           return ColoredBox(
@@ -66,7 +71,7 @@ class _MeDisAppState extends State<MeDisApp> {
                 constraints: const BoxConstraints(maxWidth: 430),
                 child: ColoredBox(
                   color: Colors.white,
-                  child: child ?? const SizedBox.shrink(),
+                  child: content,
                 ),
               ),
             ),

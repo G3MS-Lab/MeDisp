@@ -61,7 +61,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 title: Text(record.meal.label,
                     style: const TextStyle(fontWeight: FontWeight.w700)),
                 subtitle: Text(
-                    '${record.doses.fold<int>(0, (sum, dose) => sum + dose.quantity)} เม็ด · ${TimeOfDay.fromDateTime(record.takenAt).format(context)}'),
+                    '${record.doses.fold<int>(0, (sum, dose) => sum + dose.quantity)} เม็ด · ${record.takenAt.formatTime24Hour()}'),
                 trailing: const Icon(Icons.chevron_right),
               ),
             )),

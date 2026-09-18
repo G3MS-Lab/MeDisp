@@ -192,3 +192,14 @@ class IntakeRecord {
   final MealType meal;
   final List<DrugDose> doses;
 }
+
+extension TimeOfDayFormatX on TimeOfDay {
+  String format24Hour() =>
+      '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+}
+
+extension DateTimeTimeFormatX on DateTime {
+  String formatTime24Hour() =>
+      '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+}
+

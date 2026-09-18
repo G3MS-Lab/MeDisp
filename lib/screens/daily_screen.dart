@@ -143,7 +143,7 @@ class _MealCardState extends State<_MealCard> {
                     child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                      Text('${meal.type.label} · ${meal.time.format(context)}',
+                      Text('${meal.type.label} · ${meal.time.format24Hour()}',
                           style: const TextStyle(
                               fontSize: 17, fontWeight: FontWeight.w700)),
                       Text(

@@ -21,7 +21,7 @@ class IntakeDetailScreen extends StatelessWidget {
             title: Text(record.meal.label,
                 style: const TextStyle(fontWeight: FontWeight.w700)),
             subtitle: Text(
-                '${record.takenAt.day}/${record.takenAt.month}/${record.takenAt.year + 543} · ${TimeOfDay.fromDateTime(record.takenAt).format(context)}'),
+                '${record.takenAt.day}/${record.takenAt.month}/${record.takenAt.year + 543} · ${record.takenAt.formatTime24Hour()}'),
           )),
           const SizedBox(height: 15),
           const Text('รายการยาที่ทาน',

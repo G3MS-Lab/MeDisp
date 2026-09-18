@@ -206,4 +206,19 @@ void main() {
     expect(restored.alertSettings.mealTimes[MealType.breakfast],
         const TimeOfDay(hour: 8, minute: 15));
   });
+
+  test('24-hour time formatting formats correctly with leading zeros', () {
+    const morning = TimeOfDay(hour: 7, minute: 5);
+    const evening = TimeOfDay(hour: 19, minute: 30);
+    const midnight = TimeOfDay(hour: 0, minute: 0);
+    expect(morning.format24Hour(), '07:05');
+    expect(evening.format24Hour(), '19:30');
+    expect(midnight.format24Hour(), '00:00');
+
+    final dtMorning = DateTime(2026, 9, 18, 8, 4);
+    final dtNight = DateTime(2026, 9, 18, 23, 59);
+    expect(dtMorning.formatTime24Hour(), '08:04');
+    expect(dtNight.formatTime24Hour(), '23:59');
+  });
 }
+
