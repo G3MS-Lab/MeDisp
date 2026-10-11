@@ -16,9 +16,10 @@ class IntakeDetailScreen extends StatelessWidget {
               child: ListTile(
             contentPadding: const EdgeInsets.all(16),
             leading: CircleAvatar(
-                backgroundColor: record.meal.color,
-                child: const Icon(Icons.check, color: Colors.white)),
-            title: Text(record.meal.label,
+                backgroundColor: record.color,
+                child: Icon(record.isPrn ? Icons.healing_rounded : Icons.check,
+                    color: Colors.white)),
+            title: Text(record.label,
                 style: const TextStyle(fontWeight: FontWeight.w700)),
             subtitle: Text(
                 '${record.takenAt.day}/${record.takenAt.month}/${record.takenAt.year + 543} · ${record.takenAt.formatTime24Hour()}'),
@@ -36,7 +37,7 @@ class IntakeDetailScreen extends StatelessWidget {
                   leading: const Icon(Icons.medication_outlined),
                   title: Text(dose.drug.name),
                   subtitle: Text(
-                      '${dose.quantity} เม็ด · ${(dose.drug.instructionFor(record.meal)?.beforeFood ?? true) ? 'ก่อนอาหาร' : 'หลังอาหาร'}'),
+                      '${dose.quantity} เม็ด · ${record.isPrn ? "ทานเมื่อมีอาการ" : ((record.meal != null && (dose.drug.instructionFor(record.meal!)?.beforeFood ?? true)) ? 'ก่อนอาหาร' : 'หลังอาหาร')}'),
                   trailing: const Icon(Icons.chevron_right),
                 ),
               )),

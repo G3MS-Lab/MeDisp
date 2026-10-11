@@ -32,6 +32,15 @@ class PersistentMedicationRepository implements MedicationRepository {
         'label_image_path': drug.labelImagePath,
         'added_at': drug.addedAt?.toIso8601String(),
         'stopped_at': drug.stoppedAt?.toIso8601String(),
+        'is_prn': drug.isPrn,
+        'prn_config': drug.prnConfig == null
+            ? null
+            : {
+                'symptom': drug.prnConfig!.symptom,
+                'quantity': drug.prnConfig!.quantity,
+                'min_interval_hours': drug.prnConfig!.minIntervalHours,
+                'max_doses_per_day': drug.prnConfig!.maxDosesPerDay,
+              },
         'instructions': drug.instructions
             .map((dose) => {
                   'meal': dose.meal.name,
@@ -52,7 +61,18 @@ class PersistentMedicationRepository implements MedicationRepository {
         stoppedAt: json['stopped_at'] == null
             ? null
             : DateTime.parse(json['stopped_at'] as String),
-        instructions: (json['instructions'] as List)
+        isPrn: (json['is_prn'] as bool?) ?? false,
+        prnConfig: json['prn_config'] == null
+            ? null
+            : PrnConfig(
+                symptom: (json['prn_config']['symptom'] as String?) ?? '',
+                quantity: (json['prn_config']['quantity'] as int?) ?? 1,
+                minIntervalHours:
+                    (json['prn_config']['min_interval_hours'] as int?) ?? 4,
+                maxDosesPerDay:
+                    (json['prn_config']['max_doses_per_day'] as int?) ?? 4,
+              ),
+        instructions: (json['instructions'] as List? ?? const [])
             .cast<Map<String, dynamic>>()
             .map((dose) => DoseInstruction(
                 meal: MealType.values.byName(dose['meal'] as String),
@@ -103,10 +123,18 @@ class PersistentMedicationRepository implements MedicationRepository {
     final knownDrugs = {for (final drug in await drugs()) drug.id: drug};
     return (await _list('intakes')).map((json) {
       final doses = (json['doses'] as List).cast<Map<String, dynamic>>();
+      final mealName = json['meal'] as String?;
+      final isPrn = (json['is_prn'] as bool?) ?? (mealName == null);
+      final meal = mealName != null &&
+              MealType.values.any((item) => item.name == mealName)
+          ? MealType.values.byName(mealName)
+          : null;
       return IntakeRecord(
           id: json['id'] as String,
           takenAt: DateTime.parse(json['taken_at'] as String),
-          meal: MealType.values.byName(json['meal'] as String),
+          meal: meal,
+          isPrn: isPrn,
+          reason: json['reason'] as String?,
           doses: doses
               .where((dose) => knownDrugs.containsKey(dose['drug_id']))
               .map((dose) => DrugDose(
@@ -121,7 +149,9 @@ class PersistentMedicationRepository implements MedicationRepository {
     values.add({
       'id': record.id,
       'taken_at': record.takenAt.toIso8601String(),
-      'meal': record.meal.name,
+      'meal': record.meal?.name,
+      'is_prn': record.isPrn,
+      'reason': record.reason,
       'doses': record.doses
           .map((dose) => {'drug_id': dose.drug.id, 'quantity': dose.quantity})
           .toList()

@@ -70,4 +70,35 @@ void main() {
     expect(find.text('Daily Check List'), findsOneWidget);
     expect(find.textContaining('วันนี้ทานแล้ว'), findsOneWidget);
   });
+
+  testWidgets(
+      'Daily checklist switches between scheduled meals and PRN slide tabs',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final auth = OfflineAuthRepository(MemoryAuthStorage());
+    await auth.initialize();
+    await auth.register(
+        name: 'Patient', email: 'patient@example.com', password: 'password');
+    final controller = AppController(auth, PersistentDispenserRepository(auth),
+        PersistentMedicationRepository(auth));
+    await tester.pumpWidget(AppScope(
+        controller: controller, child: MeDisApp(controller: controller)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ยาตามมื้อ'), findsOneWidget);
+    expect(find.text('ตามอาการ'), findsOneWidget);
+    expect(find.textContaining('วันนี้ทานแล้ว'), findsOneWidget);
+
+    // Tap PRN tab
+    await tester.tap(find.text('ตามอาการ'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ยาตามอาการในตู้ (0 รายการ)'), findsOneWidget);
+    expect(find.text('ยังไม่มียาตามอาการในตู้จ่ายยา'), findsOneWidget);
+
+    // Tap back to scheduled meals
+    await tester.tap(find.text('ยาตามมื้อ'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('วันนี้ทานแล้ว'), findsOneWidget);
+  });
 }

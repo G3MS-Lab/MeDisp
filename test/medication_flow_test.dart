@@ -220,5 +220,100 @@ void main() {
     expect(dtMorning.formatTime24Hour(), '08:04');
     expect(dtNight.formatTime24Hour(), '23:59');
   });
+
+  test('PRN medication flow enforces cooldown interval and daily limit',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final auth = OfflineAuthRepository(MemoryAuthStorage());
+    await auth.initialize();
+    await auth.register(
+        name: 'PRN Patient',
+        email: 'prn@example.com',
+        password: 'securepass');
+
+    var currentTime = DateTime(2026, 3, 10, 8, 0);
+    final controller = AppController(
+        auth,
+        PersistentDispenserRepository(auth),
+        PersistentMedicationRepository(auth),
+        now: () => currentTime);
+    await controller.initialize();
+    await controller.toggleConnection();
+
+    const prnDrug = Drug(
+      id: 'prn-para',
+      name: 'Paracetamol 500mg',
+      isPrn: true,
+      prnConfig: PrnConfig(
+        symptom: 'แก้ปวด / ลดไข้',
+        quantity: 1,
+        minIntervalHours: 4,
+        maxDosesPerDay: 2,
+      ),
+    );
+
+    await controller.addDrugToSlot(prnDrug, 2, 10);
+    expect(controller.prnSlots.length, 1);
+    expect(controller.prnSlots.first.drug?.name, 'Paracetamol 500mg');
+    expect(controller.todayMeals, isEmpty); // PRN does not appear in meal checklist!
+
+    // Initially available
+    final initialStatus = controller.checkPrnStatus(prnDrug);
+    expect(initialStatus.canTake, isTrue);
+    expect(initialStatus.dosesTakenLast24Hours, 0);
+
+    // Take dose 1 at 08:00
+    await controller.completePrnIntake(prnDrug);
+    expect(controller.slots[1].remaining, 9);
+    expect(controller.intakeHistory.length, 1);
+    expect(controller.intakeHistory.first.isPrn, isTrue);
+    expect(controller.intakeHistory.first.reason, 'แก้ปวด / ลดไข้');
+
+    // 1 hour later (09:00) -> cooldown active
+    currentTime = DateTime(2026, 3, 10, 9, 0);
+    final cooldownStatus = controller.checkPrnStatus(prnDrug);
+    expect(cooldownStatus.canTake, isFalse);
+    expect(cooldownStatus.remainingWait?.inHours, 3);
+    await expectLater(
+        controller.completePrnIntake(prnDrug), throwsStateError);
+
+    // 4.5 hours later (12:30) -> cooldown passed, can take dose 2
+    currentTime = DateTime(2026, 3, 10, 12, 30);
+    expect(controller.checkPrnStatus(prnDrug).canTake, isTrue);
+    await controller.completePrnIntake(prnDrug);
+    expect(controller.slots[1].remaining, 8);
+    expect(controller.intakeHistory.length, 2);
+
+    // 5 hours later (17:30) -> cooldown passed, but hit max limit of 2 doses / 24 hours
+    currentTime = DateTime(2026, 3, 10, 17, 30);
+    final limitStatus = controller.checkPrnStatus(prnDrug);
+    expect(limitStatus.canTake, isFalse);
+    expect(limitStatus.dosesTakenLast24Hours, 2);
+    expect(limitStatus.reason, contains('ครบโควตาสูงสุด 2 ครั้ง'));
+    await expectLater(
+        controller.completePrnIntake(prnDrug), throwsStateError);
+
+    // Adherence ignores PRN drug
+    final report = const AdherenceService().calculate(
+      period: AdherencePeriod.day,
+      now: currentTime,
+      drugs: [prnDrug],
+      intakes: controller.intakeHistory,
+    );
+    expect(report.expected, 0);
+    expect(report.drugs, isEmpty);
+
+    // Persists across restart
+    final restored = AppController(
+        auth,
+        PersistentDispenserRepository(auth),
+        PersistentMedicationRepository(auth),
+        now: () => currentTime);
+    await restored.initialize();
+    expect(restored.prnSlots.single.drug?.isPrn, isTrue);
+    expect(restored.prnSlots.single.drug?.prnConfig?.symptom,
+        'แก้ปวด / ลดไข้');
+    expect(restored.slots[1].remaining, 8);
+  });
 }
 

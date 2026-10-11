@@ -28,15 +28,82 @@ class DrugDetailScreen extends StatelessWidget {
         _InventorySection(
             slots: slots, remaining: remaining, capacity: capacity),
         const SizedBox(height: 16),
-        _SectionCard(
-          icon: Icons.schedule_outlined,
-          title: 'ตารางการรับประทาน',
-          child: Column(
-            children: drug.instructions
-                .map((instruction) => _DoseRow(instruction: instruction))
-                .toList(),
+        if (drug.isPrn)
+          _SectionCard(
+            icon: Icons.healing_rounded,
+            title: 'คำแนะนำการทานยาตามอาการ (PRN)',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xFFEDE9FE),
+                    child: Icon(Icons.healing, color: Color(0xFF7C3AED)),
+                  ),
+                  title: const Text('อาการที่ทาน (ข้อบ่งใช้)'),
+                  subtitle: Text(
+                    drug.prnConfig?.symptom.isNotEmpty == true
+                        ? drug.prnConfig!.symptom
+                        : 'ทานเมื่อมีอาการ',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF6D28D9)),
+                  ),
+                ),
+                const Divider(),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xFFE0F2FE),
+                    child: Icon(Icons.medication, color: Color(0xFF0284C7)),
+                  ),
+                  title: const Text('ขนาดรับประทานต่อครั้ง'),
+                  subtitle: Text(
+                    'ครั้งละ ${drug.prnConfig?.quantity ?? 1} เม็ด',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                const Divider(),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xFFFEF3C7),
+                    child: Icon(Icons.timer_outlined, color: Color(0xFFD97706)),
+                  ),
+                  title: const Text('ระยะห่างขั้นต่ำในการทานซ้ำ'),
+                  subtitle: Text(
+                    'ทุก ${drug.prnConfig?.minIntervalHours ?? 4} ชั่วโมงเมื่อมีอาการ',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                const Divider(),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xFFFEE2E2),
+                    child: Icon(Icons.warning_amber_rounded,
+                        color: Color(0xFFDC2626)),
+                  ),
+                  title: const Text('ปริมาณสูงสุดต่อวัน (24 ชม.)'),
+                  subtitle: Text(
+                    'ไม่เกิน ${drug.prnConfig?.maxDosesPerDay ?? 4} ครั้งต่อวัน',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          _SectionCard(
+            icon: Icons.schedule_outlined,
+            title: 'ตารางการรับประทาน',
+            child: Column(
+              children: drug.instructions
+                  .map((instruction) => _DoseRow(instruction: instruction))
+                  .toList(),
+            ),
           ),
-        ),
         const SizedBox(height: 16),
         _SectionCard(
           icon: Icons.health_and_safety_outlined,

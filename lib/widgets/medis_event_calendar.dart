@@ -89,11 +89,17 @@ class MeDisEventCalendar extends StatelessWidget {
               final date = DateTime(first.year, first.month, day);
               final meals = showMedicationEvents
                   ? intakes
-                      .where(
-                          (record) => DateUtils.isSameDay(record.takenAt, date))
-                      .map((record) => record.meal)
+                      .where((record) =>
+                          !record.isPrn &&
+                          record.meal != null &&
+                          DateUtils.isSameDay(record.takenAt, date))
+                      .map((record) => record.meal!)
                       .toSet()
                   : <MealType>{};
+              final hasPrn = showMedicationEvents
+                  ? intakes.any((record) =>
+                      record.isPrn && DateUtils.isSameDay(record.takenAt, date))
+                  : false;
               final allergyCount = showAllergyEvents
                   ? allergies
                       .where((record) => DateUtils.isSameDay(record.date, date))
@@ -130,7 +136,23 @@ class MeDisEventCalendar extends StatelessWidget {
                               color: const Color(0xFF253246))),
                       const Spacer(),
                       if (showMedicationEvents)
-                        _MedicationMarkerGrid(completedMeals: meals),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _MedicationMarkerGrid(completedMeals: meals),
+                            if (hasPrn) ...[
+                              const SizedBox(width: 2),
+                              Container(
+                                width: 5,
+                                height: 5,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF8B5CF6),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       if (allergyCount > 0)
                         const Icon(Icons.warning_rounded,
                             size: 16, color: Color(0xFFE04B4B)),
@@ -142,9 +164,12 @@ class MeDisEventCalendar extends StatelessWidget {
           ),
           const Divider(height: 22),
           Wrap(spacing: 12, runSpacing: 8, children: [
-            if (showMedicationEvents)
+            if (showMedicationEvents) ...[
               ...MealType.values.map((meal) =>
                   _LegendDot(color: meal.color, label: 'ยา${meal.label}')),
+              const _LegendDot(
+                  color: Color(0xFF8B5CF6), label: 'ยาตามอาการ'),
+            ],
             if (showAllergyEvents)
               const Row(mainAxisSize: MainAxisSize.min, children: [
                 Icon(Icons.warning_rounded, size: 17, color: Color(0xFFE04B4B)),

@@ -52,12 +52,14 @@ class AdherenceService {
     };
     final actualEvents = <String>{};
     for (final intake in intakes) {
+      if (intake.isPrn || intake.meal == null) continue;
       final date = DateTime(
           intake.takenAt.year, intake.takenAt.month, intake.takenAt.day);
       if (date.isBefore(start) || date.isAfter(end)) continue;
       for (final dose in intake.doses) {
+        if (dose.drug.isPrn) continue;
         actualEvents.add(
-            '${dose.drug.id}|${date.toIso8601String()}|${intake.meal.name}');
+            '${dose.drug.id}|${date.toIso8601String()}|${intake.meal!.name}');
       }
     }
 
@@ -65,6 +67,7 @@ class AdherenceService {
     var totalTaken = 0;
     var totalExpected = 0;
     for (final drug in drugs) {
+      if (drug.isPrn) continue;
       final added = drug.addedAt == null
           ? start
           : DateTime(

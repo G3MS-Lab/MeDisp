@@ -34,15 +34,62 @@ class DoseInstruction {
   final bool beforeFood;
 }
 
+class PrnConfig {
+  const PrnConfig({
+    required this.symptom,
+    this.quantity = 1,
+    this.minIntervalHours = 4,
+    this.maxDosesPerDay = 4,
+  });
+
+  final String symptom;
+  final int quantity;
+  final int minIntervalHours;
+  final int maxDosesPerDay;
+
+  PrnConfig copyWith({
+    String? symptom,
+    int? quantity,
+    int? minIntervalHours,
+    int? maxDosesPerDay,
+  }) =>
+      PrnConfig(
+        symptom: symptom ?? this.symptom,
+        quantity: quantity ?? this.quantity,
+        minIntervalHours: minIntervalHours ?? this.minIntervalHours,
+        maxDosesPerDay: maxDosesPerDay ?? this.maxDosesPerDay,
+      );
+}
+
+class PrnStatus {
+  const PrnStatus({
+    required this.canTake,
+    required this.reason,
+    required this.dosesTakenLast24Hours,
+    required this.maxDosesPerDay,
+    this.nextAvailableAt,
+    this.remainingWait,
+  });
+
+  final bool canTake;
+  final String reason;
+  final int dosesTakenLast24Hours;
+  final int maxDosesPerDay;
+  final DateTime? nextAvailableAt;
+  final Duration? remainingWait;
+}
+
 class Drug {
   const Drug(
       {required this.id,
       required this.name,
-      required this.instructions,
+      this.instructions = const [],
       this.labelImagePath,
       this.addedAt,
       this.stoppedAt,
-      this.notes = ''});
+      this.notes = '',
+      this.isPrn = false,
+      this.prnConfig});
   final String id;
   final String name;
   final List<DoseInstruction> instructions;
@@ -50,15 +97,29 @@ class Drug {
   final DateTime? addedAt;
   final DateTime? stoppedAt;
   final String notes;
+  final bool isPrn;
+  final PrnConfig? prnConfig;
 
-  Drug copyWith({DateTime? stoppedAt}) => Drug(
+  Drug copyWith({
+    DateTime? stoppedAt,
+    bool? isPrn,
+    PrnConfig? prnConfig,
+    String? name,
+    List<DoseInstruction>? instructions,
+    String? labelImagePath,
+    DateTime? addedAt,
+    String? notes,
+  }) =>
+      Drug(
         id: id,
-        name: name,
-        instructions: instructions,
-        labelImagePath: labelImagePath,
-        addedAt: addedAt,
+        name: name ?? this.name,
+        instructions: instructions ?? this.instructions,
+        labelImagePath: labelImagePath ?? this.labelImagePath,
+        addedAt: addedAt ?? this.addedAt,
         stoppedAt: stoppedAt ?? this.stoppedAt,
-        notes: notes,
+        notes: notes ?? this.notes,
+        isPrn: isPrn ?? this.isPrn,
+        prnConfig: prnConfig ?? this.prnConfig,
       );
 
   DoseInstruction? instructionFor(MealType meal) {
@@ -182,15 +243,30 @@ class AllergyRecord {
 }
 
 class IntakeRecord {
-  const IntakeRecord(
-      {required this.id,
-      required this.takenAt,
-      required this.meal,
-      required this.doses});
+  const IntakeRecord({
+    required this.id,
+    required this.takenAt,
+    this.meal,
+    required this.doses,
+    this.isPrn = false,
+    this.reason,
+  });
   final String id;
   final DateTime takenAt;
-  final MealType meal;
+  final MealType? meal;
   final List<DrugDose> doses;
+  final bool isPrn;
+  final String? reason;
+
+  String get label => isPrn
+      ? (reason != null && reason!.trim().isNotEmpty
+          ? 'ตามอาการ: $reason'
+          : 'ยาตามอาการ')
+      : (meal?.label ?? 'ทานยา');
+
+  Color get color => isPrn
+      ? const Color(0xFF8B5CF6)
+      : (meal?.color ?? const Color(0xFF63B1FF));
 }
 
 extension TimeOfDayFormatX on TimeOfDay {

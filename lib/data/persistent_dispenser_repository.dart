@@ -91,6 +91,18 @@ class PersistentDispenserRepository implements DispenserRepository {
                 'notes': slot.drug!.notes,
                 'label_image_path': slot.drug!.labelImagePath,
                 'added_at': slot.drug!.addedAt?.toIso8601String(),
+                'stopped_at': slot.drug!.stoppedAt?.toIso8601String(),
+                'is_prn': slot.drug!.isPrn,
+                'prn_config': slot.drug!.prnConfig == null
+                    ? null
+                    : {
+                        'symptom': slot.drug!.prnConfig!.symptom,
+                        'quantity': slot.drug!.prnConfig!.quantity,
+                        'min_interval_hours':
+                            slot.drug!.prnConfig!.minIntervalHours,
+                        'max_doses_per_day':
+                            slot.drug!.prnConfig!.maxDosesPerDay,
+                      },
                 'instructions': slot.drug!.instructions
                     .map((dose) => {
                           'meal': dose.meal.name,
@@ -113,7 +125,23 @@ class PersistentDispenserRepository implements DispenserRepository {
             addedAt: drugJson['added_at'] == null
                 ? null
                 : DateTime.parse(drugJson['added_at'] as String),
-            instructions: (drugJson['instructions'] as List)
+            stoppedAt: drugJson['stopped_at'] == null
+                ? null
+                : DateTime.parse(drugJson['stopped_at'] as String),
+            isPrn: (drugJson['is_prn'] as bool?) ?? false,
+            prnConfig: drugJson['prn_config'] == null
+                ? null
+                : PrnConfig(
+                    symptom: (drugJson['prn_config']['symptom'] as String?) ?? '',
+                    quantity: (drugJson['prn_config']['quantity'] as int?) ?? 1,
+                    minIntervalHours: (drugJson['prn_config']
+                            ['min_interval_hours'] as int?) ??
+                        4,
+                    maxDosesPerDay: (drugJson['prn_config']['max_doses_per_day']
+                            as int?) ??
+                        4,
+                  ),
+            instructions: (drugJson['instructions'] as List? ?? const [])
                 .cast<Map<String, dynamic>>()
                 .map((dose) => DoseInstruction(
                     meal: MealType.values.byName(dose['meal'] as String),

@@ -118,11 +118,18 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  List<DispenserSlot> get prnSlots => slots
+      .where((slot) => !slot.isEmpty && slot.drug != null && slot.drug!.isPrn)
+      .toList();
+
   void _rebuildMeals() {
     final today = _now();
     final completedMeals = intakeHistory
-        .where((record) => DateUtils.isSameDay(record.takenAt, today))
-        .map((record) => record.meal)
+        .where((record) =>
+            !record.isPrn &&
+            record.meal != null &&
+            DateUtils.isSameDay(record.takenAt, today))
+        .map((record) => record.meal!)
         .toSet();
     todayMeals = MealType.values
         .map((meal) {
@@ -130,6 +137,7 @@ class AppController extends ChangeNotifier {
           final slottedDrugs = slots
               .where((slot) => !slot.isEmpty && slot.remaining > 0)
               .map((slot) => slot.drug!)
+              .where((drug) => !drug.isPrn)
               .toList();
           for (final drug in slottedDrugs) {
             for (final instruction
@@ -201,6 +209,92 @@ class AppController extends ChangeNotifier {
     slots = await _dispenser.slots();
     todayMeals[index] =
         todayMeals[index].copyWith(completed: true, completedAt: now);
+    notifyListeners();
+  }
+
+  PrnStatus checkPrnStatus(Drug drug) {
+    if (!drug.isPrn) {
+      return const PrnStatus(
+        canTake: false,
+        reason: 'ไม่ใช่ยาตามอาการ',
+        dosesTakenLast24Hours: 0,
+        maxDosesPerDay: 0,
+      );
+    }
+    final config = drug.prnConfig ??
+        const PrnConfig(
+            symptom: '', quantity: 1, minIntervalHours: 4, maxDosesPerDay: 4);
+    final now = _now();
+    final dayAgo = now.subtract(const Duration(hours: 24));
+
+    final drugIntakesLast24Hours = intakeHistory
+        .where((record) => record.isPrn && record.takenAt.isAfter(dayAgo))
+        .where((record) => record.doses.any((dose) => dose.drug.id == drug.id))
+        .toList()
+      ..sort((a, b) => b.takenAt.compareTo(a.takenAt));
+
+    final countLast24h = drugIntakesLast24Hours.length;
+
+    if (countLast24h >= config.maxDosesPerDay) {
+      return PrnStatus(
+        canTake: false,
+        reason:
+            'ทานครบโควตาสูงสุด ${config.maxDosesPerDay} ครั้งในรอบ 24 ชม. แล้ว',
+        dosesTakenLast24Hours: countLast24h,
+        maxDosesPerDay: config.maxDosesPerDay,
+      );
+    }
+
+    if (drugIntakesLast24Hours.isNotEmpty) {
+      final lastTaken = drugIntakesLast24Hours.first.takenAt;
+      final nextAvailable =
+          lastTaken.add(Duration(hours: config.minIntervalHours));
+      if (now.isBefore(nextAvailable)) {
+        final remaining = nextAvailable.difference(now);
+        final hours = remaining.inHours;
+        final minutes = remaining.inMinutes % 60;
+        final waitStr = hours > 0 ? '$hours ชม. $minutes นาที' : '$minutes นาที';
+        return PrnStatus(
+          canTake: false,
+          reason: 'ยังไม่ถึงระยะปลอดภัย กรุณารออีก $waitStr',
+          dosesTakenLast24Hours: countLast24h,
+          maxDosesPerDay: config.maxDosesPerDay,
+          nextAvailableAt: nextAvailable,
+          remainingWait: remaining,
+        );
+      }
+    }
+
+    return PrnStatus(
+      canTake: true,
+      reason: 'พร้อมรับประทานเมื่อมีอาการ',
+      dosesTakenLast24Hours: countLast24h,
+      maxDosesPerDay: config.maxDosesPerDay,
+    );
+  }
+
+  Future<void> completePrnIntake(Drug drug,
+      {int? quantity, String? reason}) async {
+    final status = checkPrnStatus(drug);
+    if (!status.canTake) {
+      throw StateError(status.reason);
+    }
+
+    final doseQuantity = quantity ?? drug.prnConfig?.quantity ?? 1;
+    final now = _now();
+
+    await _dispenser.consume({drug.id: doseQuantity});
+    final intake = IntakeRecord(
+      id: now.microsecondsSinceEpoch.toString(),
+      takenAt: now,
+      meal: null,
+      isPrn: true,
+      reason: reason ?? drug.prnConfig?.symptom,
+      doses: [DrugDose(drug, doseQuantity)],
+    );
+    await _medications.saveIntake(intake);
+    intakeHistory = await _medications.intakeHistory();
+    slots = await _dispenser.slots();
     notifyListeners();
   }
 

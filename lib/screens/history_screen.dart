@@ -56,9 +56,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     MaterialPageRoute(
                         builder: (_) => IntakeDetailScreen(record: record))),
                 leading: CircleAvatar(
-                    backgroundColor: record.meal.color,
-                    child: const Icon(Icons.check, color: Colors.white)),
-                title: Text(record.meal.label,
+                    backgroundColor: record.color,
+                    child: Icon(
+                        record.isPrn ? Icons.healing_rounded : Icons.check,
+                        color: Colors.white)),
+                title: Text(record.label,
                     style: const TextStyle(fontWeight: FontWeight.w700)),
                 subtitle: Text(
                     '${record.doses.fold<int>(0, (sum, dose) => sum + dose.quantity)} เม็ด · ${record.takenAt.formatTime24Hour()}'),
