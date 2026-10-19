@@ -5,7 +5,9 @@ import 'package:image_picker/image_picker.dart';
 import '../application/app_scope.dart';
 import '../data/local_image_store.dart';
 import '../domain/models.dart';
+import '../widgets/medication_verify_image.dart';
 import '../widgets/medis_app_bar.dart';
+import '../widgets/slide_to_confirm.dart';
 
 class DrugFormScreen extends StatefulWidget {
   const DrugFormScreen({required this.slot, super.key});
@@ -29,6 +31,36 @@ class _DrugFormScreenState extends State<DrugFormScreen> {
   final Map<MealType, bool> beforeFood = {MealType.breakfast: true};
   bool saving = false;
   String? labelImagePath;
+
+  bool get isEditing => widget.slot.drug != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final drug = widget.slot.drug;
+    if (drug == null) {
+      quantity = widget.slot.capacity < 10 ? widget.slot.capacity : 10;
+      return;
+    }
+    name.text = drug.name;
+    notes.text = drug.notes;
+    labelImagePath = drug.labelImagePath;
+    quantity = widget.slot.remaining;
+    isPrn = drug.isPrn;
+    final config = drug.prnConfig;
+    if (config != null) {
+      symptom.text = config.symptom;
+      prnQuantity = config.quantity;
+      minIntervalHours = config.minIntervalHours;
+      maxDosesPerDay = config.maxDosesPerDay;
+    }
+    doses.clear();
+    beforeFood.clear();
+    for (final instruction in drug.instructions) {
+      doses[instruction.meal] = instruction.quantity;
+      beforeFood[instruction.meal] = instruction.beforeFood;
+    }
+  }
 
   Future<void> pickLabelImage(ImageSource source) async {
     try {
@@ -57,6 +89,23 @@ class _DrugFormScreenState extends State<DrugFormScreen> {
     }
   }
 
+  Future<void> chooseLabelImage() async {
+    final source = await showModalBottomSheet<ImageSource>(
+        context: context,
+        builder: (context) => SafeArea(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+              ListTile(
+                  leading: const Icon(Icons.camera_alt),
+                  title: const Text('ถ่ายรูป'),
+                  onTap: () => Navigator.pop(context, ImageSource.camera)),
+              ListTile(
+                  leading: const Icon(Icons.photo_library),
+                  title: const Text('เลือกรูป'),
+                  onTap: () => Navigator.pop(context, ImageSource.gallery))
+            ])));
+    if (source != null && mounted) await pickLabelImage(source);
+  }
+
   @override
   void dispose() {
     name.dispose();
@@ -66,6 +115,7 @@ class _DrugFormScreenState extends State<DrugFormScreen> {
   }
 
   Future<void> save() async {
+    if (saving) return;
     if (!formKey.currentState!.validate()) return;
     if (!isPrn && doses.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -73,41 +123,40 @@ class _DrugFormScreenState extends State<DrugFormScreen> {
       return;
     }
     setState(() => saving = true);
-    final drug = isPrn
-        ? Drug(
-            id: DateTime.now().microsecondsSinceEpoch.toString(),
-            name: name.text.trim(),
-            notes: notes.text.trim(),
-            labelImagePath: labelImagePath,
-            addedAt: DateTime.now(),
-            isPrn: true,
-            prnConfig: PrnConfig(
-              symptom: symptom.text.trim().isEmpty
-                  ? 'เมื่อมีอาการ'
-                  : symptom.text.trim(),
-              quantity: prnQuantity,
-              minIntervalHours: minIntervalHours,
-              maxDosesPerDay: maxDosesPerDay,
-            ),
-            instructions: const [],
-          )
-        : Drug(
-            id: DateTime.now().microsecondsSinceEpoch.toString(),
-            name: name.text.trim(),
-            notes: notes.text.trim(),
-            labelImagePath: labelImagePath,
-            addedAt: DateTime.now(),
-            isPrn: false,
-            instructions: doses.entries
+    final original = widget.slot.drug;
+    final drug = Drug(
+        id: original?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
+        name: name.text.trim(),
+        notes: notes.text.trim(),
+        labelImagePath: labelImagePath,
+        addedAt: original == null ? DateTime.now() : original.addedAt,
+        stoppedAt: original?.stoppedAt,
+        isPrn: isPrn,
+        prnConfig: isPrn
+            ? PrnConfig(
+                symptom: symptom.text.trim().isEmpty
+                    ? 'เมื่อมีอาการ'
+                    : symptom.text.trim(),
+                quantity: prnQuantity,
+                minIntervalHours: minIntervalHours,
+                maxDosesPerDay: maxDosesPerDay,
+              )
+            : null,
+        instructions: isPrn
+            ? const []
+            : doses.entries
                 .map((entry) => DoseInstruction(
                     meal: entry.key,
                     quantity: entry.value,
                     beforeFood: beforeFood[entry.key] ?? true))
-                .toList(),
-          );
+                .toList());
     try {
-      await AppScope.of(context)
-          .addDrugToSlot(drug, widget.slot.number, quantity);
+      final controller = AppScope.of(context);
+      if (isEditing) {
+        await controller.updateDrugInSlot(drug, widget.slot.number, quantity);
+      } else {
+        await controller.addDrugToSlot(drug, widget.slot.number, quantity);
+      }
       if (mounted) {
         Navigator.pop(context);
       }
@@ -126,7 +175,8 @@ class _DrugFormScreenState extends State<DrugFormScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
         backgroundColor: const Color(0xFFF4F7FC),
-        appBar: MeDisAppBar('เพิ่มยา · ช่อง ${widget.slot.number}'),
+        appBar: MeDisAppBar(
+            '${isEditing ? 'แก้ไขยา' : 'เพิ่มยา'} · ช่อง ${widget.slot.number}'),
         body: Form(
           key: formKey,
           child: ListView(padding: const EdgeInsets.all(20), children: [
@@ -136,6 +186,7 @@ class _DrugFormScreenState extends State<DrugFormScreen> {
                 children: [
                   TextFormField(
                       controller: name,
+                      onChanged: (_) => setState(() {}),
                       decoration: const InputDecoration(
                           labelText: 'ชื่อยา',
                           prefixIcon: Icon(Icons.medication_outlined)),
@@ -187,11 +238,13 @@ class _DrugFormScreenState extends State<DrugFormScreen> {
                         color: const Color(0xFFF4F7FC),
                         borderRadius: BorderRadius.circular(14)),
                     child: Row(children: [
-                      const Expanded(
-                          child: Text('จำนวนยาที่ใส่',
-                              style: TextStyle(color: Color(0xFF68778B)))),
+                      Expanded(
+                          child: Text(
+                              isEditing ? 'จำนวนยาคงเหลือ' : 'จำนวนยาที่ใส่',
+                              style:
+                                  const TextStyle(color: Color(0xFF68778B)))),
                       IconButton(
-                          onPressed: quantity > 1
+                          onPressed: quantity > (isEditing ? 0 : 1)
                               ? () => setState(() => quantity--)
                               : null,
                           icon: const Icon(Icons.remove_circle_outline)),
@@ -253,6 +306,7 @@ class _DrugFormScreenState extends State<DrugFormScreen> {
                     ),
                     const SizedBox(height: 14),
                     DropdownButtonFormField<int>(
+                      isExpanded: true,
                       initialValue: minIntervalHours,
                       decoration: const InputDecoration(
                         labelText: 'ระยะห่างขั้นต่ำในการทานซ้ำ',
@@ -273,6 +327,7 @@ class _DrugFormScreenState extends State<DrugFormScreen> {
                     ),
                     const SizedBox(height: 14),
                     DropdownButtonFormField<int>(
+                      isExpanded: true,
                       initialValue: maxDosesPerDay,
                       decoration: const InputDecoration(
                         labelText: 'จำนวนครั้งสูงสุดต่อวัน (24 ชม.)',
@@ -344,59 +399,26 @@ class _DrugFormScreenState extends State<DrugFormScreen> {
                             ),
                         ])),
                   ]),
-            _DrugFormSection(
-                title: 'รูปฉลากยา',
-                icon: Icons.photo_camera_outlined,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      final source = await showModalBottomSheet<ImageSource>(
-                          context: context,
-                          builder: (context) => SafeArea(
-                                  child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                    ListTile(
-                                        leading: const Icon(Icons.camera_alt),
-                                        title: const Text('ถ่ายรูป'),
-                                        onTap: () => Navigator.pop(
-                                            context, ImageSource.camera)),
-                                    ListTile(
-                                        leading:
-                                            const Icon(Icons.photo_library),
-                                        title: const Text('เลือกรูป'),
-                                        onTap: () => Navigator.pop(
-                                            context, ImageSource.gallery))
-                                  ])));
-                      if (source == null) return;
-                      await pickLabelImage(source);
-                    },
-                    icon: const Icon(Icons.camera_alt_outlined),
-                    label: Text(labelImagePath == null
-                        ? 'ถ่ายหรืออัปโหลดรูปฉลากยา'
-                        : 'แนบรูปฉลากยาแล้ว'),
-                    style: OutlinedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(100)),
-                  ),
-                  if (labelImagePath != null) ...[
-                    const SizedBox(height: 10),
-                    const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.check_circle,
-                              size: 18, color: Colors.green),
-                          SizedBox(width: 6),
-                          Text('รูปจะถูกเก็บไว้ในแอปอย่างถาวร')
-                        ])
-                  ]
-                ]),
-            FilledButton.icon(
-                onPressed: saving ? null : save,
-                style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(54)),
-                icon: const Icon(Icons.save_outlined),
-                label:
-                    Text(saving ? 'กำลังบันทึก...' : 'บันทึกลงเครื่องจ่ายยา')),
+            MedicationVerifyImage(
+              drug: Drug(
+                id: widget.slot.drug?.id ?? 'preview',
+                name: name.text.trim().isEmpty
+                    ? 'ยาที่กำลังเพิ่ม'
+                    : name.text.trim(),
+                labelImagePath: labelImagePath,
+              ),
+              onPickImage: chooseLabelImage,
+            ),
+            const SizedBox(height: 16),
+            SlideToConfirm(
+              label: saving
+                  ? 'กำลังบันทึก...'
+                  : isEditing
+                      ? 'สไลด์เพื่อบันทึกการแก้ไข'
+                      : 'สไลด์เพื่อบันทึกยา',
+              onConfirmed: save,
+              enabled: !saving,
+            ),
           ]),
         ),
       );
@@ -420,9 +442,10 @@ class _DrugFormSection extends StatelessWidget {
               Row(children: [
                 Icon(icon, color: const Color(0xFF397BD9)),
                 const SizedBox(width: 9),
-                Text(title,
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w800))
+                Expanded(
+                    child: Text(title,
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w800)))
               ]),
               const SizedBox(height: 16),
               ...children,

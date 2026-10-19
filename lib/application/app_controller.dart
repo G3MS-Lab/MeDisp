@@ -45,6 +45,8 @@ class AppController extends ChangeNotifier {
   Future<void> _initialize() async {
     user = _auth.currentUser;
     _auth.authStateChanges.listen((nextUser) async {
+      // _authenticate loads the new user's data and publishes it once.
+      if (busy) return;
       user = nextUser;
       if (nextUser != null) await _loadUserData();
       notifyListeners();
@@ -174,16 +176,59 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> addDrugToSlot(Drug drug, int slot, int quantity) async {
+  Future<void> addDrugToSlot(Drug drug, int slot, int quantity) =>
+      _saveDrugToSlot(drug, slot, quantity, editing: false);
+
+  Future<void> updateDrugInSlot(Drug drug, int slot, int quantity) =>
+      _saveDrugToSlot(drug, slot, quantity, editing: true);
+
+  Future<void> refillDrugInSlot(
+      int slot, String drugId, int addedQuantity) async {
+    final current = (await _dispenser.slots())
+        .where((value) => value.number == slot)
+        .firstOrNull;
+    if (current == null || current.drug?.id != drugId) {
+      throw StateError('ข้อมูลช่องยาเปลี่ยนไป กรุณากลับไปเลือกช่องอีกครั้ง');
+    }
+    if (addedQuantity < 1 ||
+        current.remaining + addedQuantity > current.capacity) {
+      throw StateError(
+          'จำนวนยาที่เพิ่มต้องอยู่ระหว่าง 1 ถึง ${current.capacity - current.remaining} เม็ด');
+    }
+    await _dispenser.fillSlot(
+        slot, current.drug!, current.remaining + addedQuantity);
+    slots = await _dispenser.slots();
+    _rebuildMeals();
+    notifyListeners();
+  }
+
+  Future<void> _saveDrugToSlot(Drug drug, int slot, int quantity,
+      {required bool editing}) async {
+    final previous = (await _dispenser.slots())
+        .where((value) => value.number == slot)
+        .firstOrNull;
+    if (previous == null ||
+        (editing ? previous.drug?.id != drug.id : !previous.isEmpty)) {
+      throw StateError('ข้อมูลช่องยาเปลี่ยนไป กรุณากลับไปเลือกช่องอีกครั้ง');
+    }
+    if (quantity < (editing ? 0 : 1) || quantity > previous.capacity) {
+      throw StateError(
+          'จำนวนยาต้องอยู่ระหว่าง ${editing ? 0 : 1} ถึง ${previous.capacity} เม็ด');
+    }
     await _dispenser.fillSlot(slot, drug, quantity);
     try {
       await _medications.saveDrug(drug);
     } catch (_) {
-      await _dispenser.clearSlot(slot);
+      if (previous.drug == null) {
+        await _dispenser.clearSlot(slot);
+      } else {
+        await _dispenser.fillSlot(slot, previous.drug!, previous.remaining);
+      }
       rethrow;
     }
     drugs = await _medications.drugs();
     slots = await _dispenser.slots();
+    intakeHistory = await _medications.intakeHistory();
     _rebuildMeals();
     notifyListeners();
   }
@@ -253,7 +298,8 @@ class AppController extends ChangeNotifier {
         final remaining = nextAvailable.difference(now);
         final hours = remaining.inHours;
         final minutes = remaining.inMinutes % 60;
-        final waitStr = hours > 0 ? '$hours ชม. $minutes นาที' : '$minutes นาที';
+        final waitStr =
+            hours > 0 ? '$hours ชม. $minutes นาที' : '$minutes นาที';
         return PrnStatus(
           canTake: false,
           reason: 'ยังไม่ถึงระยะปลอดภัย กรุณารออีก $waitStr',

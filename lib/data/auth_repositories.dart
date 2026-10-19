@@ -4,10 +4,10 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:pointycastle/export.dart';
 
 import '../domain/models.dart';
 import '../domain/repositories.dart';
+import 'password_derivation.dart' as password_derivation;
 
 abstract interface class AuthStorage {
   Future<String?> read(String key);
@@ -89,7 +89,8 @@ class OfflineAuthRepository implements AuthRepository {
     final matches = (await _accounts())
         .where((account) => account.email == normalizedEmail);
     if (matches.isEmpty ||
-        !_verifyPassword(password, matches.single.salt, matches.single.hash)) {
+        !await _verifyPassword(
+            password, matches.single.salt, matches.single.hash)) {
       throw StateError('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
     }
     return _startSession(matches.single.user);
@@ -119,7 +120,7 @@ class OfflineAuthRepository implements AuthRepository {
       email: normalizedEmail,
       displayName: normalizedName,
       salt: base64UrlEncode(salt),
-      hash: base64UrlEncode(_derivePassword(password, salt)),
+      hash: base64UrlEncode(await _derivePassword(password, salt)),
     );
     accounts.add(account);
     await _saveAccounts(accounts);
@@ -172,16 +173,16 @@ class OfflineAuthRepository implements AuthRepository {
         List<int>.generate(length, (_) => random.nextInt(256)));
   }
 
-  Uint8List _derivePassword(String password, Uint8List salt) {
-    final derivator = PBKDF2KeyDerivator(HMac(SHA256Digest(), 64))
-      ..init(Pbkdf2Parameters(salt, _iterations, _derivedKeyLength));
-    return derivator.process(Uint8List.fromList(utf8.encode(password)));
-  }
+  Future<Uint8List> _derivePassword(String password, Uint8List salt) =>
+      password_derivation.derivePassword(
+          password, salt, _iterations, _derivedKeyLength);
 
-  bool _verifyPassword(String password, String saltValue, String hashValue) {
+  Future<bool> _verifyPassword(
+      String password, String saltValue, String hashValue) async {
     try {
       final expected = base64Url.decode(hashValue);
-      final actual = _derivePassword(password, base64Url.decode(saltValue));
+      final actual =
+          await _derivePassword(password, base64Url.decode(saltValue));
       if (actual.length != expected.length) return false;
       var difference = 0;
       for (var index = 0; index < actual.length; index++) {

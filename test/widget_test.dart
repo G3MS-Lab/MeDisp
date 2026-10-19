@@ -59,8 +59,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final auth = OfflineAuthRepository(MemoryAuthStorage());
     await auth.initialize();
-    await auth.register(
-        name: 'Patient', email: 'patient@example.com', password: 'password');
+    await tester.runAsync(() => auth.register(
+        name: 'Patient', email: 'patient@example.com', password: 'password'));
     final controller = AppController(auth, PersistentDispenserRepository(auth),
         PersistentMedicationRepository(auth));
     await tester.pumpWidget(AppScope(
@@ -77,8 +77,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final auth = OfflineAuthRepository(MemoryAuthStorage());
     await auth.initialize();
-    await auth.register(
-        name: 'Patient', email: 'patient@example.com', password: 'password');
+    await tester.runAsync(() => auth.register(
+        name: 'Patient', email: 'patient@example.com', password: 'password'));
     final controller = AppController(auth, PersistentDispenserRepository(auth),
         PersistentMedicationRepository(auth));
     await tester.pumpWidget(AppScope(

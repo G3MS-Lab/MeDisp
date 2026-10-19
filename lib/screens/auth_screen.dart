@@ -25,6 +25,7 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Future<void> submit() async {
+    if (AppScope.of(context).busy) return;
     if (!formKey.currentState!.validate()) return;
     final controller = AppScope.of(context);
     final success = registerMode
@@ -116,10 +117,19 @@ class _AuthScreenState extends State<AuthScreen> {
                       child: FilledButton(
                           onPressed: controller.busy ? null : submit,
                           child: controller.busy
-                              ? const SizedBox.square(
-                                  dimension: 22,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2))
+                              ? Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const SizedBox.square(
+                                        dimension: 22,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2)),
+                                    const SizedBox(width: 10),
+                                    Text(registerMode
+                                        ? 'กำลังสมัคร...'
+                                        : 'กำลังเข้าสู่ระบบ...'),
+                                  ],
+                                )
                               : Text(registerMode
                                   ? 'สมัครสมาชิก'
                                   : 'เข้าสู่ระบบ'))),

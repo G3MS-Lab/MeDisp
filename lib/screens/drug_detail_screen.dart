@@ -4,6 +4,7 @@ import '../application/app_scope.dart';
 import '../domain/models.dart';
 import '../widgets/medis_app_bar.dart';
 import '../widgets/local_image.dart';
+import 'medication_form_navigation.dart';
 
 class DrugDetailScreen extends StatelessWidget {
   const DrugDetailScreen({required this.drug, super.key});
@@ -12,10 +13,12 @@ class DrugDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final slots = AppScope.of(context)
-        .slots
-        .where((slot) => slot.drug?.id == drug.id)
-        .toList();
+    final controller = AppScope.of(context);
+    final drug =
+        controller.drugs.where((item) => item.id == this.drug.id).firstOrNull ??
+            this.drug;
+    final slots =
+        controller.slots.where((slot) => slot.drug?.id == drug.id).toList();
     final remaining =
         slots.fold<int>(0, (total, slot) => total + slot.remaining);
     final capacity = slots.fold<int>(0, (total, slot) => total + slot.capacity);
@@ -24,6 +27,30 @@ class DrugDetailScreen extends StatelessWidget {
       appBar: const MeDisAppBar('ข้อมูลยา'),
       body: ListView(padding: const EdgeInsets.all(20), children: [
         _DrugHeader(drug: drug),
+        if (slots.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            key: const Key('edit-medication'),
+            onPressed: controller.connected
+                ? () => openMedicationForm(context, slots.first)
+                : null,
+            icon: const Icon(Icons.edit_outlined),
+            label: const Text('แก้ไขยา'),
+            style:
+                FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            key: const Key('refill-medication'),
+            onPressed: controller.connected && !slots.first.isFull
+                ? () => openMedicationRefill(context, slots.first)
+                : null,
+            icon: const Icon(Icons.add_circle_outline),
+            label: const Text('เพิ่มยาในช่อง'),
+            style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(48)),
+          ),
+        ],
         const SizedBox(height: 16),
         _InventorySection(
             slots: slots, remaining: remaining, capacity: capacity),
@@ -47,8 +74,7 @@ class DrugDetailScreen extends StatelessWidget {
                         ? drug.prnConfig!.symptom
                         : 'ทานเมื่อมีอาการ',
                     style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF6D28D9)),
+                        fontWeight: FontWeight.w700, color: Color(0xFF6D28D9)),
                   ),
                 ),
                 const Divider(),
@@ -339,9 +365,11 @@ class _SectionCard extends StatelessWidget {
             Row(children: [
               Icon(icon, color: const Color(0xFF397BD9)),
               const SizedBox(width: 9),
-              Text(title,
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w800))
+              Expanded(
+                child: Text(title,
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w800)),
+              )
             ]),
             const Divider(height: 24),
             child,
