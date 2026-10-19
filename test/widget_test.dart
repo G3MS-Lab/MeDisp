@@ -34,12 +34,14 @@ void main() {
     ]))));
 
     expect(find.text('สิงหาคม 2569'), findsOneWidget);
-    expect(find.text('ยาเช้า'), findsOneWidget);
+    expect(find.text('100% ทานครบ'), findsOneWidget);
+    expect(find.text('ยาตามอาการ'), findsOneWidget);
     expect(find.text('อาการไม่พึงประสงค์'), findsOneWidget);
     expect(find.byIcon(Icons.warning_rounded), findsNWidgets(2));
   });
 
-  testWidgets('calendar cells render medication intake status', (tester) async {
+  testWidgets('calendar cells render percentage of meals and PRN symbol',
+      (tester) async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day, 8);
     final past = today.subtract(const Duration(days: 1));
@@ -55,15 +57,21 @@ void main() {
       ],
     );
 
+    const prnDrug = Drug(
+      id: 'prn-drug',
+      name: 'ยาตามอาการ',
+      isPrn: true,
+    );
+
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: ListView(
           children: [
             MeDisEventCalendar(
               selectedDate: today,
-              drugs: [drug],
+              drugs: [drug, prnDrug],
               intakes: [
-                // Past day: complete (breakfast and dinner)
+                // Past day: complete (breakfast and dinner) + PRN
                 IntakeRecord(
                     id: 'past-1',
                     takenAt: past,
@@ -74,6 +82,11 @@ void main() {
                     takenAt: past,
                     meal: MealType.dinner,
                     doses: const []),
+                IntakeRecord(
+                    id: 'past-prn',
+                    takenAt: past,
+                    isPrn: true,
+                    doses: const [DrugDose(prnDrug, 1)]),
                 // Today: partial (breakfast only)
                 IntakeRecord(
                     id: 'today-1',
@@ -89,10 +102,14 @@ void main() {
       ),
     ));
 
-    // Legend items
-    expect(find.text('ทานครบ'), findsWidgets);
-    expect(find.text('ทานบางส่วน'), findsWidgets);
-    expect(find.text('ไม่ได้ทาน'), findsWidgets);
+    // Percentages in calendar cells
+    expect(find.text('100%'), findsWidgets);
+    expect(find.text('50%'), findsWidgets);
+    expect(find.text('0%'), findsWidgets);
+
+    // PRN healing symbol
+    expect(find.byIcon(Icons.healing_rounded), findsWidgets);
+    expect(find.text('ยาตามอาการ'), findsOneWidget);
   });
 
   testWidgets('initializes an unauthenticated app after the first frame',

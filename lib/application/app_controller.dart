@@ -126,13 +126,12 @@ class AppController extends ChangeNotifier {
 
   void _rebuildMeals() {
     final today = _now();
-    final completedMeals = intakeHistory
+    final todayIntakes = intakeHistory
         .where((record) =>
             !record.isPrn &&
             record.meal != null &&
             DateUtils.isSameDay(record.takenAt, today))
-        .map((record) => record.meal!)
-        .toSet();
+        .toList();
     todayMeals = MealType.values
         .map((meal) {
           final doses = <DrugDose>[];
@@ -147,11 +146,17 @@ class AppController extends ChangeNotifier {
               doses.add(DrugDose(drug, instruction.quantity));
             }
           }
+          final takenDrugIds = todayIntakes
+              .where((record) => record.meal == meal)
+              .expand((record) => record.doses.map((d) => d.drug.id))
+              .toSet();
+          final allCompleted = doses.isNotEmpty &&
+              doses.every((dose) => takenDrugIds.contains(dose.drug.id));
           return MealPlan(
               type: meal,
               time: alertSettings.mealTimes[meal]!,
               drugs: doses,
-              completed: completedMeals.contains(meal));
+              completed: allCompleted);
         })
         .where((meal) => meal.drugs.isNotEmpty)
         .toList();
@@ -233,7 +238,7 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> completeMeal(MealType type) async {
+  Future<void> completeMeal(MealType type, {List<DrugDose>? doses}) async {
     final index = todayMeals.indexWhere((meal) => meal.type == type);
     if (index < 0) return;
     final meal = todayMeals[index];
@@ -242,18 +247,32 @@ class AppController extends ChangeNotifier {
     if (MealSchedule.current(todayMeals, now)?.type != type) {
       throw StateError('กดทานแล้วได้เฉพาะมื้อปัจจุบันเท่านั้น');
     }
-    await _dispenser
-        .consume({for (final dose in meal.drugs) dose.drug.id: dose.quantity});
+    final dosesToConsume = doses ?? meal.drugs;
+    await _dispenser.consume(
+        {for (final dose in dosesToConsume) dose.drug.id: dose.quantity});
     final intake = IntakeRecord(
         id: now.microsecondsSinceEpoch.toString(),
         takenAt: now,
         meal: type,
-        doses: meal.drugs);
+        doses: dosesToConsume);
     await _medications.saveIntake(intake);
     intakeHistory = await _medications.intakeHistory();
     slots = await _dispenser.slots();
-    todayMeals[index] =
-        todayMeals[index].copyWith(completed: true, completedAt: now);
+
+    final today = now;
+    final todayIntakeDrugIds = intakeHistory
+        .where((record) =>
+            !record.isPrn &&
+            record.meal == type &&
+            DateUtils.isSameDay(record.takenAt, today))
+        .expand((record) => record.doses.map((d) => d.drug.id))
+        .toSet();
+    final allCompleted =
+        meal.drugs.every((dose) => todayIntakeDrugIds.contains(dose.drug.id));
+    if (allCompleted) {
+      todayMeals[index] =
+          todayMeals[index].copyWith(completed: true, completedAt: now);
+    }
     notifyListeners();
   }
 

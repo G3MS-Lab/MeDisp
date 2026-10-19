@@ -1,7 +1,10 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../theme/medis_theme.dart';
 
+import '../application/app_controller.dart';
 import '../application/app_scope.dart';
 import '../domain/meal_schedule.dart';
 import '../domain/models.dart';
@@ -129,6 +132,154 @@ class _SlidingTabBar extends StatelessWidget {
       );
 }
 
+class ScheduledMealCardData {
+  final MealPlan meal;
+  final MealType mealType;
+  final bool? beforeFood;
+  final List<DrugDose> doses;
+  final TimeOfDay time;
+  final bool isCompleted;
+  final bool isCurrent;
+  final String buttonKeyName;
+
+  const ScheduledMealCardData({
+    required this.meal,
+    required this.mealType,
+    required this.beforeFood,
+    required this.doses,
+    required this.time,
+    required this.isCompleted,
+    required this.isCurrent,
+    required this.buttonKeyName,
+  });
+
+  int get totalPills => doses.fold(0, (sum, item) => sum + item.quantity);
+
+  String get title {
+    if (mealType == MealType.bedtime) {
+      return 'ก่อนนอน';
+    }
+    return '${mealType.label} · ${beforeFood == false ? "หลังอาหาร" : "ก่อนอาหาร"}';
+  }
+
+  IconData get icon => switch (mealType) {
+        MealType.breakfast => Icons.wb_sunny_rounded,
+        MealType.lunch => Icons.light_mode_rounded,
+        MealType.dinner => Icons.wb_twilight_rounded,
+        MealType.bedtime => Icons.bedtime_rounded,
+      };
+
+  Color get color => mealType.color;
+}
+
+List<ScheduledMealCardData> _buildMealCards(
+    AppController controller, MealPlan? currentMeal) {
+  final now = DateTime.now();
+  final todayIntakes = controller.intakeHistory
+      .where((r) =>
+          !r.isPrn && r.meal != null && DateUtils.isSameDay(r.takenAt, now))
+      .toList();
+
+  final cards = <ScheduledMealCardData>[];
+
+  for (final meal in controller.todayMeals) {
+    bool checkDosesCompleted(List<DrugDose> doses) {
+      if (doses.isEmpty) return false;
+      if (meal.completed) return true;
+      final mealIntakes = todayIntakes.where((r) => r.meal == meal.type);
+      final takenDrugIds =
+          mealIntakes.expand((r) => r.doses.map((d) => d.drug.id)).toSet();
+      return doses.every((d) => takenDrugIds.contains(d.drug.id));
+    }
+
+    // Bedtime has NO before-food or after-food distinction
+    if (meal.type == MealType.bedtime) {
+      final isComp = checkDosesCompleted(meal.drugs);
+      cards.add(ScheduledMealCardData(
+        meal: meal,
+        mealType: meal.type,
+        beforeFood: null,
+        doses: meal.drugs,
+        time: meal.time,
+        isCompleted: isComp,
+        isCurrent: meal.type == currentMeal?.type,
+        buttonKeyName: 'receive-meal-${meal.type.name}',
+      ));
+      continue;
+    }
+
+    final beforeFoodDoses = meal.drugs
+        .where(
+            (dose) => dose.drug.instructionFor(meal.type)?.beforeFood ?? true)
+        .toList();
+    final afterFoodDoses = meal.drugs
+        .where((dose) =>
+            !(dose.drug.instructionFor(meal.type)?.beforeFood ?? true))
+        .toList();
+
+    if (beforeFoodDoses.isNotEmpty) {
+      final isComp = checkDosesCompleted(beforeFoodDoses);
+      cards.add(ScheduledMealCardData(
+        meal: meal,
+        mealType: meal.type,
+        beforeFood: true,
+        doses: beforeFoodDoses,
+        time: meal.time,
+        isCompleted: isComp,
+        isCurrent: meal.type == currentMeal?.type,
+        buttonKeyName: 'receive-meal-${meal.type.name}',
+      ));
+    }
+
+    if (afterFoodDoses.isNotEmpty) {
+      final isComp = checkDosesCompleted(afterFoodDoses);
+      cards.add(ScheduledMealCardData(
+        meal: meal,
+        mealType: meal.type,
+        beforeFood: false,
+        doses: afterFoodDoses,
+        time: meal.time,
+        isCompleted: isComp,
+        isCurrent: meal.type == currentMeal?.type,
+        buttonKeyName: beforeFoodDoses.isEmpty
+            ? 'receive-meal-${meal.type.name}'
+            : 'receive-meal-${meal.type.name}-after',
+      ));
+    }
+  }
+
+  return cards;
+}
+
+int _calculateInitialIndex(
+    List<ScheduledMealCardData> cards, MealPlan? currentMeal) {
+  if (cards.isEmpty) return 0;
+  // 1. Prioritize current meal that is not yet completed
+  if (currentMeal != null) {
+    final curIdx = cards
+        .indexWhere((c) => c.mealType == currentMeal.type && !c.isCompleted);
+    if (curIdx != -1) return curIdx;
+  }
+  // 2. Prioritize first incomplete card
+  final firstIncomplete = cards.indexWhere((c) => !c.isCompleted);
+  if (firstIncomplete != -1) return firstIncomplete;
+  // 3. Fallback to currentMeal card if present
+  if (currentMeal != null) {
+    final curIdx = cards.indexWhere((c) => c.mealType == currentMeal.type);
+    if (curIdx != -1) return curIdx;
+  }
+  return 0;
+}
+
+int _findCurrentMealIndex(
+    List<ScheduledMealCardData> cards, MealPlan? currentMeal) {
+  if (cards.isEmpty || currentMeal == null) return -1;
+  final idx = cards
+      .indexWhere((c) => c.mealType == currentMeal.type && !c.isCompleted);
+  if (idx != -1) return idx;
+  return cards.indexWhere((c) => c.mealType == currentMeal.type);
+}
+
 class _ScheduledMealsTab extends StatelessWidget {
   const _ScheduledMealsTab({
     required this.done,
@@ -141,28 +292,59 @@ class _ScheduledMealsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
-    return ListView(
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-      children: [
-        Text('วันนี้ทานแล้ว $done จาก ${controller.todayMeals.length} มื้อ',
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-        if (controller.todayMeals.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: LinearProgressIndicator(
-                  minHeight: 6, value: done / controller.todayMeals.length)),
+    final cards = _buildMealCards(controller, currentMeal);
+    final initialIndex = _calculateInitialIndex(cards, currentMeal);
+    final currentMealIndex = _findCurrentMealIndex(cards, currentMeal);
+    final completedCount = cards.where((c) => c.isCompleted).length;
+
+    if (cards.isEmpty) {
+      return ListView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        children: const [
+          Text('วันนี้ทานแล้ว 0 จาก 0 มื้อ',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+          SizedBox(height: 12),
+          _EmptyPlan(),
+          SizedBox(height: 12),
+          MeDisNotice(message: 'ใช้ยาตามคำแนะนำของแพทย์หรือเภสัชกร'),
         ],
-        const SizedBox(height: 12),
-        if (controller.todayMeals.isEmpty) const _EmptyPlan(),
-        ...controller.todayMeals.map((meal) => _MealCard(
-            key: ValueKey(meal.type),
-            meal: meal,
-            isCurrent: meal.type == currentMeal?.type,
-            onComplete: () async {
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'วันนี้ทานแล้ว $completedCount จาก ${cards.length} มื้อ',
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  minHeight: 6,
+                  value: cards.isEmpty ? 0.0 : completedCount / cards.length,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: _CurvedMealCarousel(
+            cards: cards,
+            initialIndex: initialIndex,
+            currentMealIndex: currentMealIndex,
+            onCompleteCard: (card) async {
               try {
-                await controller.completeMeal(meal.type);
+                await controller.completeMeal(card.mealType, doses: card.doses);
               } catch (error) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -170,130 +352,538 @@ class _ScheduledMealsTab extends StatelessWidget {
                           error.toString().replaceFirst('Bad state: ', ''))));
                 }
               }
-            })),
-        const MeDisNotice(message: 'ใช้ยาตามคำแนะนำของแพทย์หรือเภสัชกร'),
+            },
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(20, 4, 20, 14),
+          child: MeDisNotice(message: 'ใช้ยาตามคำแนะนำของแพทย์หรือเภสัชกร'),
+        ),
       ],
     );
   }
 }
 
-class _MealCard extends StatefulWidget {
-  const _MealCard(
-      {required this.meal,
-      required this.isCurrent,
-      required this.onComplete,
-      super.key});
-  final MealPlan meal;
-  final bool isCurrent;
-  final Future<void> Function() onComplete;
+class _CurvedMealCarousel extends StatefulWidget {
+  const _CurvedMealCarousel({
+    required this.cards,
+    required this.initialIndex,
+    required this.currentMealIndex,
+    required this.onCompleteCard,
+  });
+
+  final List<ScheduledMealCardData> cards;
+  final int initialIndex;
+  final int currentMealIndex;
+  final Future<void> Function(ScheduledMealCardData card) onCompleteCard;
 
   @override
-  State<_MealCard> createState() => _MealCardState();
+  State<_CurvedMealCarousel> createState() => _CurvedMealCarouselState();
 }
 
-class _MealCardState extends State<_MealCard> {
-  bool expanded = false;
-  bool completing = false;
+class _CurvedMealCarouselState extends State<_CurvedMealCarousel> {
+  late PageController _pageController;
+  late int _currentPage;
 
   @override
-  void didUpdateWidget(covariant _MealCard oldWidget) {
+  void initState() {
+    super.initState();
+    _currentPage = widget.initialIndex.clamp(
+        0, widget.cards.isEmpty ? 0 : widget.cards.length - 1);
+    _pageController = PageController(
+      initialPage: _currentPage,
+      viewportFraction: 0.88,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _CurvedMealCarousel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isCurrent) expanded = true;
+    if (_currentPage >= widget.cards.length && widget.cards.isNotEmpty) {
+      _currentPage = widget.cards.length - 1;
+      _pageController.jumpToPage(_currentPage);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _goToPage(int page) {
+    if (page < 0 || page >= widget.cards.length) return;
+    setState(() => _currentPage = page);
+    _pageController.animateToPage(
+      page,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOutCubic,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final meal = widget.meal;
-    final connected = AppScope.of(context).connected;
-    final showDetails = widget.isCurrent || expanded;
-    final beforeFoodDoses = meal.drugs
-        .where(
-            (dose) => dose.drug.instructionFor(meal.type)?.beforeFood ?? true)
-        .toList();
-    final afterFoodDoses = meal.drugs
-        .where((dose) =>
-            !(dose.drug.instructionFor(meal.type)?.beforeFood ?? true))
-        .toList();
-    return MeDisMedicationCard(
-      title: '${meal.type.label} · ${meal.time.format24Hour()}',
-      subtitle: '${meal.totalPills} เม็ด · ${meal.drugs.length} รายการ',
-      icon: meal.completed
-          ? Icons.check_circle_outline
-          : Icons.medication_outlined,
-      expanded: showDetails,
-      highlighted: widget.isCurrent && !meal.completed,
-      onToggle:
-          widget.isCurrent ? null : () => setState(() => expanded = !expanded),
-      trailing: widget.isCurrent
-          ? Icon(
-              meal.completed
-                  ? Icons.check_circle
-                  : Icons.notifications_active_outlined,
-              color: meal.completed ? MeDisColors.success : MeDisColors.primary,
-              size: 28)
-          : null,
+    if (widget.cards.isEmpty) return const _EmptyPlan();
+
+    return Column(
       children: [
-        if (beforeFoodDoses.isNotEmpty)
-          _DoseGroup(
-              title: 'ก่อนอาหาร',
-              icon: Icons.restaurant_menu,
-              color: MeDisColors.primary,
-              doses: beforeFoodDoses),
-        if (beforeFoodDoses.isNotEmpty && afterFoodDoses.isNotEmpty)
-          const SizedBox(height: 12),
-        if (afterFoodDoses.isNotEmpty)
-          _DoseGroup(
-              title: 'หลังอาหาร',
-              icon: Icons.restaurant,
-              color: MeDisColors.primary,
-              doses: afterFoodDoses),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          height: 52,
-          child: FilledButton.icon(
-            key: Key('receive-meal-${meal.type.name}'),
-            onPressed: (!meal.completed &&
-                    widget.isCurrent &&
-                    connected &&
-                    !completing)
-                ? () async {
-                    final confirmed =
-                        await _confirmMedicine(context, meal.drugs);
-                    if (confirmed && context.mounted) {
-                      setState(() => completing = true);
-                      try {
-                        await widget.onComplete();
-                      } finally {
-                        if (mounted) setState(() => completing = false);
-                      }
-                    }
+        Expanded(
+          child: PageView.builder(
+            key: const Key('curved-meal-carousel-pageview'),
+            controller: _pageController,
+            physics: const BouncingScrollPhysics(),
+            itemCount: widget.cards.length,
+            onPageChanged: (index) {
+              setState(() => _currentPage = index);
+            },
+            itemBuilder: (context, index) {
+              final card = widget.cards[index];
+              return AnimatedBuilder(
+                animation: _pageController,
+                builder: (context, child) {
+                  double diff = 0.0;
+                  if (_pageController.position.haveDimensions) {
+                    final page =
+                        _pageController.page ?? _currentPage.toDouble();
+                    diff = index - page;
+                  } else {
+                    diff = (index - _currentPage).toDouble();
                   }
-                : null,
-            icon: completing
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
-                : Icon(meal.completed
-                    ? Icons.check_circle_outline
-                    : Icons.medication_outlined),
-            label: Text(
-              completing
-                  ? 'กำลังดำเนินการ...'
-                  : meal.completed
-                      ? 'ทานแล้ว'
-                      : !connected
-                          ? 'เชื่อมต่อเครื่องก่อนรับยา'
-                          : widget.isCurrent
-                              ? 'รับยา'
-                              : 'ไม่ใช่มื้อปัจจุบัน',
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+
+                  final absDiff = diff.abs().clamp(0.0, 2.0);
+                  // Curve physics: dips down in a smooth arc
+                  final dy = math.pow(absDiff, 1.8) * 32.0;
+                  // Rotation angle: tilts along tangent
+                  final rotation = diff * 0.055;
+                  // Scale and opacity
+                  final scale = (1.0 - absDiff * 0.08).clamp(0.85, 1.0);
+                  final opacity = (1.0 - absDiff * 0.35).clamp(0.4, 1.0);
+
+                  return Transform.translate(
+                    offset: Offset(0.0, dy),
+                    child: Transform.rotate(
+                      angle: rotation,
+                      child: Transform.scale(
+                        scale: scale,
+                        child: Opacity(
+                          opacity: opacity,
+                          child: child,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: _SingleMealCard(
+                    card: card,
+                    onComplete: () => widget.onCompleteCard(card),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 6),
+        _PageDots(
+          count: widget.cards.length,
+          currentIndex: _currentPage,
+          onTap: _goToPage,
+        ),
+        if (widget.currentMealIndex != -1) ...[
+          const SizedBox(height: 4),
+          _JumpToCurrentMealButton(
+            isAlreadyOnCurrent: _currentPage == widget.currentMealIndex,
+            currentMealTitle: widget.cards[widget.currentMealIndex].title,
+            onPressed: _currentPage == widget.currentMealIndex
+                ? null
+                : () => _goToPage(widget.currentMealIndex),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _JumpToCurrentMealButton extends StatelessWidget {
+  const _JumpToCurrentMealButton({
+    required this.isAlreadyOnCurrent,
+    required this.currentMealTitle,
+    required this.onPressed,
+  });
+
+  final bool isAlreadyOnCurrent;
+  final String currentMealTitle;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 250),
+      opacity: isAlreadyOnCurrent ? 0.6 : 1.0,
+      child: TextButton.icon(
+        key: const Key('jump-to-current-meal-button'),
+        onPressed: onPressed,
+        style: TextButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          backgroundColor: isAlreadyOnCurrent
+              ? Colors.transparent
+              : MeDisColors.primary.withValues(alpha: 0.1),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: isAlreadyOnCurrent
+                  ? MeDisColors.border.withValues(alpha: 0.5)
+                  : MeDisColors.primary.withValues(alpha: 0.35),
             ),
           ),
         ),
-      ],
+        icon: Icon(
+          Icons.my_location_rounded,
+          size: 16,
+          color: isAlreadyOnCurrent ? MeDisColors.muted : MeDisColors.primary,
+        ),
+        label: Text(
+          isAlreadyOnCurrent
+              ? 'มื้อปัจจุบัน ($currentMealTitle)'
+              : 'ไปที่มื้อปัจจุบัน ($currentMealTitle)',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: isAlreadyOnCurrent ? MeDisColors.muted : MeDisColors.primary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PageDots extends StatelessWidget {
+  const _PageDots({
+    required this.count,
+    required this.currentIndex,
+    required this.onTap,
+  });
+
+  final int count;
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (count <= 1) return const SizedBox.shrink();
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(count, (index) {
+        final isSelected = index == currentIndex;
+        return GestureDetector(
+          onTap: () => onTap(index),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            width: isSelected ? 22 : 7,
+            height: 7,
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? MeDisColors.primary
+                  : MeDisColors.muted.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+}
+
+class _SingleMealCard extends StatefulWidget {
+  const _SingleMealCard({
+    required this.card,
+    required this.onComplete,
+  });
+
+  final ScheduledMealCardData card;
+  final Future<void> Function() onComplete;
+
+  @override
+  State<_SingleMealCard> createState() => _SingleMealCardState();
+}
+
+class _SingleMealCardState extends State<_SingleMealCard> {
+  bool completing = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final card = widget.card;
+    final connected = AppScope.of(context).connected;
+    final canReceive = !card.isCompleted && card.isCurrent && connected;
+    final cardBorderColor = card.isCurrent
+        ? card.color
+        : card.isCompleted
+            ? MeDisColors.success.withValues(alpha: 0.3)
+            : MeDisColors.border;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: MeDisColors.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: cardBorderColor,
+          width: card.isCurrent ? 2.2 : 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: card.isCurrent
+                ? card.color.withValues(alpha: 0.22)
+                : Colors.black.withValues(alpha: 0.06),
+            blurRadius: card.isCurrent ? 14 : 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            decoration: BoxDecoration(
+              color: card.color.withValues(alpha: 0.1),
+              border: Border(
+                bottom: BorderSide(
+                  color: card.color.withValues(alpha: 0.2),
+                  width: 1,
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: card.color.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(card.icon, color: card.color, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        card.title,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: MeDisColors.text,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          const Icon(Icons.access_time_rounded,
+                              size: 14, color: MeDisColors.muted),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              '${card.time.format24Hour()} น. · ${card.totalPills} เม็ด (${card.doses.length} รายการ)',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: MeDisColors.muted,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                if (card.isCompleted)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: MeDisColors.success.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.check_circle_rounded,
+                            size: 15, color: MeDisColors.success),
+                        SizedBox(width: 4),
+                        Text('ทานแล้ว',
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: MeDisColors.success)),
+                      ],
+                    ),
+                  )
+                else if (card.isCurrent)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: MeDisColors.primary.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.notifications_active_outlined,
+                            size: 15, color: MeDisColors.primary),
+                        SizedBox(width: 4),
+                        Text('มื้อนี้',
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: MeDisColors.primary)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              itemCount: card.doses.length,
+              separatorBuilder: (_, __) => const Divider(height: 12),
+              itemBuilder: (context, idx) {
+                final dose = card.doses[idx];
+                return InkWell(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => DrugDetailScreen(drug: dose.drug),
+                    ),
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                    child: Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: SizedBox(
+                            width: 46,
+                            height: 46,
+                            child: dose.drug.labelImagePath == null
+                                ? Container(
+                                    color: MeDisColors.primarySoft,
+                                    child: const Icon(
+                                      Icons.medication_outlined,
+                                      color: MeDisColors.primary,
+                                      size: 24,
+                                    ),
+                                  )
+                                : localImage(
+                                    dose.drug.labelImagePath!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                        Icons.broken_image_outlined),
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                dose.drug.name,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: MeDisColors.text,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'ครั้งละ ${dose.quantity} เม็ด',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: card.color,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right,
+                            color: MeDisColors.muted, size: 20),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 6, 14, 14),
+            child: SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: FilledButton.icon(
+                key: Key(card.buttonKeyName),
+                onPressed: (canReceive && !completing)
+                    ? () async {
+                        final confirmed =
+                            await _confirmMedicine(context, card.doses);
+                        if (confirmed && context.mounted) {
+                          setState(() => completing = true);
+                          try {
+                            await widget.onComplete();
+                          } finally {
+                            if (mounted) setState(() => completing = false);
+                          }
+                        }
+                      }
+                    : null,
+                icon: completing
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Icon(card.isCompleted
+                        ? Icons.check_circle_outline
+                        : Icons.medication_outlined),
+                label: Text(
+                  completing
+                      ? 'กำลังดำเนินการ...'
+                      : card.isCompleted
+                          ? 'ทานแล้ว'
+                          : !connected
+                              ? 'เชื่อมต่อเครื่องก่อนรับยา'
+                              : card.isCurrent
+                                  ? 'รับยา'
+                                  : 'ไม่ใช่มื้อปัจจุบัน',
+                  style: const TextStyle(
+                      fontSize: 17, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -364,67 +954,6 @@ Future<bool> _confirmMedicine(
         ),
       ) ??
       false;
-}
-
-class _DoseGroup extends StatelessWidget {
-  const _DoseGroup({
-    required this.title,
-    required this.icon,
-    required this.color,
-    required this.doses,
-  });
-
-  final String title;
-  final IconData icon;
-  final Color color;
-  final List<DrugDose> doses;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: color.withValues(alpha: .07),
-      borderRadius: BorderRadius.circular(MeDisRadius.input),
-      clipBehavior: Clip.antiAlias,
-      child: Column(children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(14, 13, 10, 8),
-          child: Row(children: [
-            Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                    color: color.withValues(alpha: .15),
-                    borderRadius: BorderRadius.circular(11)),
-                child: Icon(icon, size: 20, color: color)),
-            const SizedBox(width: 10),
-            Expanded(
-                child: Text(title,
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w700))),
-          ]),
-        ),
-        ...doses.map((dose) => ListTile(
-              contentPadding: const EdgeInsets.only(left: 15, right: 8),
-              onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => DrugDetailScreen(drug: dose.drug))),
-              leading: CircleAvatar(
-                  radius: 24,
-                  backgroundColor: Colors.white,
-                  child:
-                      Icon(Icons.medication_outlined, size: 26, color: color)),
-              title: Text(dose.drug.name,
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w600)),
-              subtitle: Text('ครั้งละ ${dose.quantity} เม็ด',
-                  style: const TextStyle(fontSize: 16)),
-              trailing: const Icon(Icons.chevron_right),
-            )),
-        const SizedBox(height: 5),
-      ]),
-    );
-  }
 }
 
 class _EmptyPlan extends StatelessWidget {
