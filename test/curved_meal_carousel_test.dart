@@ -26,6 +26,25 @@ Future<AppController> _createFixture() async {
   await controller.initialize();
   await controller.toggleConnection();
 
+  // Set meal times relative to DateTime.now() so Dinner is deterministically
+  // the current meal regardless of the test runner's timezone (e.g. UTC on CI).
+  final now = DateTime.now();
+  TimeOfDay shiftHours(int offsetHours) {
+    final h = (now.hour + offsetHours) % 24;
+    return TimeOfDay(hour: h < 0 ? h + 24 : h, minute: now.minute);
+  }
+
+  await controller.updateAlerts(
+    AlertSettings(
+      mealTimes: {
+        MealType.breakfast: shiftHours(-8),
+        MealType.lunch: shiftHours(-4),
+        MealType.dinner: shiftHours(0),
+        MealType.bedtime: shiftHours(4),
+      },
+    ),
+  );
+
   // Drug 1: Breakfast before food
   await controller.addDrugToSlot(
       const Drug(

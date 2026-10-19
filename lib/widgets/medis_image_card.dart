@@ -17,6 +17,18 @@ class MeDisImageCard extends StatelessWidget {
   final String? imagePath;
   final VoidCallback? onPickImage;
 
+  void _openFullScreen(BuildContext context, String path) {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => FullScreenImageScreen(
+          imagePath: path,
+          title: title,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Card(
         clipBehavior: Clip.antiAlias,
@@ -30,22 +42,63 @@ class MeDisImageCard extends StatelessWidget {
                     child: Center(
                         child: Icon(Icons.photo_outlined,
                             size: 48, color: MeDisColors.subtle)))
-                : Semantics(
-                    image: true,
-                    label: title,
-                    child: localImage(imagePath!,
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => const Center(
-                                child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                  Icon(Icons.broken_image_outlined,
-                                      size: 36, color: MeDisColors.subtle),
-                                  SizedBox(height: 8),
-                                  Text('ไม่สามารถแสดงรูปได้',
-                                      style:
-                                          TextStyle(color: MeDisColors.muted)),
-                                ])))),
+                : Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      key: const Key('view-full-screen-image'),
+                      onTap: () => _openFullScreen(context, imagePath!),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Semantics(
+                              image: true,
+                              label: title,
+                              child: localImage(imagePath!,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, __, ___) => const Center(
+                                          child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                            Icon(Icons.broken_image_outlined,
+                                                size: 36,
+                                                color: MeDisColors.subtle),
+                                            SizedBox(height: 8),
+                                            Text('ไม่สามารถแสดงรูปได้',
+                                                style: TextStyle(
+                                                    color: MeDisColors.muted)),
+                                          ])))),
+                          Positioned(
+                            right: 10,
+                            bottom: 10,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.62),
+                                borderRadius: BorderRadius.circular(99),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.fullscreen_rounded,
+                                      size: 16, color: Colors.white),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'แตะเพื่อดูเต็มจอ',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
           ),
           Padding(
             padding: const EdgeInsets.all(16),
@@ -76,4 +129,62 @@ class MeDisImageCard extends StatelessWidget {
           ),
         ]),
       );
+}
+
+class FullScreenImageScreen extends StatelessWidget {
+  const FullScreenImageScreen({
+    required this.imagePath,
+    required this.title,
+    super.key,
+  });
+
+  final String imagePath;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: SafeArea(
+        child: Center(
+          child: InteractiveViewer(
+            key: const Key('full-screen-interactive-viewer'),
+            minScale: 0.8,
+            maxScale: 4.0,
+            child: localImage(
+              imagePath,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.broken_image_outlined,
+                        size: 48, color: Colors.white70),
+                    SizedBox(height: 10),
+                    Text(
+                      'ไม่สามารถแสดงรูปภาพได้',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

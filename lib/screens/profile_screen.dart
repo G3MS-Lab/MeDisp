@@ -4,6 +4,8 @@ import '../theme/medis_theme.dart';
 
 import '../application/app_scope.dart';
 import '../domain/models.dart';
+import '../widgets/local_image.dart';
+import '../widgets/medis_image_card.dart';
 import '../widgets/medis_ui.dart';
 import 'profile_edit_screen.dart';
 import 'reminder_settings_screen.dart';
@@ -48,6 +50,7 @@ class ProfileScreen extends StatelessWidget {
                 _InfoRow(Icons.warning_amber_rounded, 'ประวัติแพ้ยา',
                     profile.drugAllergies,
                     valueColor: MeDisColors.error),
+                _DrugAllergyCardBox(profile: profile),
               ],
             ),
             _ProfileSection(
@@ -218,4 +221,199 @@ class _FeatureIcon extends StatelessWidget {
           color: color.withValues(alpha: .12),
           borderRadius: BorderRadius.circular(13)),
       child: Icon(icon, color: color));
+}
+
+class _DrugAllergyCardBox extends StatelessWidget {
+  const _DrugAllergyCardBox({required this.profile});
+  final PatientProfile profile;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasAllergyText = profile.drugAllergies.trim().isNotEmpty;
+    final hasImage = profile.drugAllergyCardImagePath != null;
+
+    return Container(
+      key: const Key('profile-drug-allergy-card'),
+      margin: const EdgeInsets.only(top: 4, bottom: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF5F5),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: MeDisColors.error.withValues(alpha: 0.35),
+          width: 1.2,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: MeDisColors.error.withValues(alpha: 0.12),
+              border: Border(
+                bottom: BorderSide(
+                  color: MeDisColors.error.withValues(alpha: 0.22),
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.credit_card_rounded,
+                  color: MeDisColors.error,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'บัตรแพ้ยาประจำตัว (Drug Allergy Card)',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: MeDisColors.error,
+                    ),
+                  ),
+                ),
+                if (profile.bloodType.trim().isNotEmpty)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      'เลือดกรุ๊ป ${profile.bloodType}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: MeDisColors.error,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.person_outline,
+                        size: 16, color: MeDisColors.muted),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        profile.name.trim().isEmpty
+                            ? 'ผู้ป่วย'
+                            : profile.name,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: MeDisColors.text,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.medication_liquid_outlined,
+                        size: 16, color: MeDisColors.error),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        hasAllergyText
+                            ? 'ยาที่แพ้: ${profile.drugAllergies}'
+                            : 'ยังไม่ได้ระบุรายการยาที่แพ้',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight:
+                              hasAllergyText ? FontWeight.w700 : FontWeight.w500,
+                          color: hasAllergyText
+                              ? MeDisColors.error
+                              : MeDisColors.muted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (hasImage) ...[
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Material(
+                      color: Colors.white,
+                      child: InkWell(
+                        key: const Key('view-allergy-card-fullscreen'),
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute<void>(
+                            builder: (_) => FullScreenImageScreen(
+                              imagePath: profile.drugAllergyCardImagePath!,
+                              title: 'บัตรแพ้ยาประจำตัว',
+                            ),
+                          ),
+                        ),
+                        child: SizedBox(
+                          height: 170,
+                          width: double.infinity,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              localImage(
+                                profile.drugAllergyCardImagePath!,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => const Center(
+                                  child: Icon(Icons.broken_image_outlined,
+                                      color: MeDisColors.subtle),
+                                ),
+                              ),
+                              Positioned(
+                                right: 8,
+                                bottom: 8,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.62),
+                                    borderRadius: BorderRadius.circular(99),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.fullscreen_rounded,
+                                          size: 16, color: Colors.white),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'แตะเพื่อดูเต็มจอ',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

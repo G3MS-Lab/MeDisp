@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../theme/medis_theme.dart';
 
 import '../application/app_scope.dart';
+import '../data/local_image_store.dart';
 import '../domain/models.dart';
 import '../widgets/medis_app_bar.dart';
+import '../widgets/medis_image_card.dart';
 import '../widgets/medis_ui.dart';
 import '../widgets/slide_to_confirm.dart';
 
@@ -19,6 +23,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   final Map<String, TextEditingController> fields = {};
   String? bloodType;
   String? gender;
+  String? drugAllergyCardImagePath;
   bool initialized = false;
   bool saving = false;
 
@@ -46,6 +51,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     });
     bloodType = profile.bloodType.isEmpty ? null : profile.bloodType;
     gender = profile.gender.isEmpty ? null : profile.gender;
+    drugAllergyCardImagePath = profile.drugAllergyCardImagePath;
     initialized = true;
   }
 
@@ -71,6 +77,46 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     }
   }
 
+  Future<void> pickAllergyCardImage() async {
+    final source = await showModalBottomSheet<ImageSource>(
+        context: context,
+        builder: (context) => SafeArea(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+              ListTile(
+                  leading: const Icon(Icons.camera_alt),
+                  title: const Text('ถ่ายรูปบัตรแพ้ยา'),
+                  onTap: () => Navigator.pop(context, ImageSource.camera)),
+              ListTile(
+                  leading: const Icon(Icons.photo_library),
+                  title: const Text('เลือกรูปบัตรแพ้ยา'),
+                  onTap: () => Navigator.pop(context, ImageSource.gallery))
+            ])));
+    if (source == null || !mounted) return;
+    try {
+      final image = await ImagePicker().pickImage(
+          source: source, maxWidth: 1600, maxHeight: 1600, imageQuality: 80);
+      if (image == null) return;
+      final storedPath = await const LocalImageStore()
+          .persist(image, category: 'allergy_cards');
+      if (mounted) setState(() => drugAllergyCardImagePath = storedPath);
+    } on PlatformException catch (error) {
+      if (!mounted) return;
+      final denied =
+          error.code.contains('denied') || error.code.contains('permission');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(denied
+              ? 'ไม่ได้รับอนุญาตให้เข้าถึงกล้องหรือรูปภาพ กรุณาเปิดสิทธิ์ใน Settings'
+              : 'ไม่สามารถเปิดกล้องหรือรูปภาพได้: ${error.message ?? error.code}')));
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(error is StateError
+                ? error.message.toString()
+                : 'ไม่สามารถแนบรูปบัตรแพ้ยาได้ กรุณาลองใหม่')));
+      }
+    }
+  }
+
   Future<void> save() async {
     if (saving) return;
     if (!formKey.currentState!.validate()) return;
@@ -89,6 +135,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         weightKg: double.tryParse(field('weight').text.trim()),
         medicalConditions: field('conditions').text.trim(),
         drugAllergies: field('drugAllergies').text.trim(),
+        drugAllergyCardImagePath: drugAllergyCardImagePath,
         caregiverName: field('caregiverName').text.trim(),
         caregiverRelationship: field('relationship').text.trim(),
         caregiverPhone: field('caregiverPhone').text.trim(),
@@ -199,6 +246,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       label: 'ประวัติแพ้ยา',
                       icon: Icons.warning_amber_rounded,
                       maxLines: 2),
+                  MeDisImageCard(
+                      title: 'รูปบัตรแพ้ยา (ถ้ามี)',
+                      description:
+                          'ถ่ายหรือแนบรูปบัตรแพ้ยาจากโรงพยาบาลเพื่อแสดงในหน้าโปรไฟล์',
+                      imagePath: drugAllergyCardImagePath,
+                      onPickImage: pickAllergyCardImage),
                 ]),
                 _FormSection(title: 'ผู้ดูแลและกรณีฉุกเฉิน', children: [
                   _Input(

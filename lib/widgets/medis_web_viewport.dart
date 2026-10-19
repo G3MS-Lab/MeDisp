@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 
 import '../theme/medis_theme.dart';
 
-/// iPhone 17 Pro Max's 1320 × 2868 display expressed at 3× scale.
+/// iPhone 17 Pro Max's 1320 × 2868 display expressed at 3× scale for desktop web,
+/// while filling the full screen naturally on mobile/narrow web viewports.
 class MeDisWebViewport extends StatelessWidget {
   const MeDisWebViewport({required this.child, super.key});
 
   static const screenSize = Size(440, 956);
+  static const double mobileBreakpoint = 600;
   final Widget child;
 
   @override
@@ -18,11 +20,30 @@ class MeDisWebViewport extends StatelessWidget {
           if (constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
             return const SizedBox.shrink();
           }
+          final media = MediaQuery.of(context);
+          final isMobileViewport = constraints.maxWidth <= mobileBreakpoint;
+
+          if (isMobileViewport) {
+            final fullSize = Size(constraints.maxWidth, constraints.maxHeight);
+            return SizedBox.fromSize(
+              size: fullSize,
+              child: MediaQuery(
+                data: media.copyWith(
+                  size: fullSize,
+                  alwaysUse24HourFormat: true,
+                ),
+                child: ClipRect(
+                  child:
+                      ColoredBox(color: MeDisColors.background, child: child),
+                ),
+              ),
+            );
+          }
+
           final scale = math.min(
               1.0,
               math.min(constraints.maxWidth / screenSize.width,
                   constraints.maxHeight / screenSize.height));
-          final media = MediaQuery.of(context);
           return Center(
             child: FittedBox(
               fit: BoxFit.scaleDown,

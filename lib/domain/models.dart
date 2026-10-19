@@ -191,6 +191,7 @@ class PatientProfile {
       this.weightKg,
       this.medicalConditions = '',
       this.drugAllergies = '',
+      this.drugAllergyCardImagePath,
       this.caregiverName = '',
       this.caregiverRelationship = '',
       this.caregiverPhone = '',
@@ -206,6 +207,7 @@ class PatientProfile {
   final double? weightKg;
   final String medicalConditions;
   final String drugAllergies;
+  final String? drugAllergyCardImagePath;
   final String caregiverName;
   final String caregiverRelationship;
   final String caregiverPhone;

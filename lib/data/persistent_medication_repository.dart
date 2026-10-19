@@ -177,6 +177,8 @@ class PersistentMedicationRepository implements MedicationRepository {
         weightKg: (json['weight_kg'] as num?)?.toDouble(),
         medicalConditions: (json['medical_conditions'] as String?) ?? '',
         drugAllergies: (json['drug_allergies'] as String?) ?? '',
+        drugAllergyCardImagePath:
+            json['drug_allergy_card_image_path'] as String?,
         caregiverName: (json['caregiver_name'] as String?) ?? '',
         caregiverRelationship:
             (json['caregiver_relationship'] as String?) ?? '',
@@ -200,6 +202,7 @@ class PersistentMedicationRepository implements MedicationRepository {
           'weight_kg': profile.weightKg,
           'medical_conditions': profile.medicalConditions,
           'drug_allergies': profile.drugAllergies,
+          'drug_allergy_card_image_path': profile.drugAllergyCardImagePath,
           'caregiver_name': profile.caregiverName,
           'caregiver_relationship': profile.caregiverRelationship,
           'caregiver_phone': profile.caregiverPhone,
