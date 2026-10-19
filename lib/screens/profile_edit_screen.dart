@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../theme/medis_theme.dart';
+
 import '../application/app_scope.dart';
 import '../domain/models.dart';
 import '../widgets/medis_app_bar.dart';
+import '../widgets/medis_ui.dart';
+import '../widgets/slide_to_confirm.dart';
 
 class ProfileEditScreen extends StatefulWidget {
   const ProfileEditScreen({super.key});
@@ -68,6 +72,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   }
 
   Future<void> save() async {
+    if (saving) return;
     if (!formKey.currentState!.validate()) return;
     setState(() => saving = true);
     final controller = AppScope.of(context);
@@ -89,7 +94,16 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         caregiverPhone: field('caregiverPhone').text.trim(),
         emergencyPhone: field('emergencyPhone').text.trim(),
       ));
-      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('บันทึกข้อมูลผู้ป่วยแล้ว')));
+        Navigator.pop(context);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(error.toString().replaceFirst('Bad state: ', ''))));
+      }
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -98,112 +112,123 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   String? requiredText(String? value) =>
       value == null || value.trim().isEmpty ? 'กรุณาระบุข้อมูล' : null;
 
+  String? positiveNumber(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+    final number = double.tryParse(value.trim());
+    return number == null || !number.isFinite || number <= 0
+        ? 'กรอกตัวเลขที่มากกว่า 0'
+        : null;
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
-        backgroundColor: const Color(0xFFF4F7FC),
+        backgroundColor: MeDisColors.background,
         appBar: const MeDisAppBar('แก้ไขข้อมูลผู้ป่วย'),
         body: Form(
           key: formKey,
-          child: ListView(padding: const EdgeInsets.all(20), children: [
-            _FormSection(title: 'ข้อมูลส่วนตัว', children: [
-              _Input(
-                  controller: field('name'),
-                  label: 'ชื่อ–นามสกุล',
-                  icon: Icons.person_outline,
-                  validator: requiredText),
-              DropdownButtonFormField<String>(
-                  initialValue: gender,
-                  decoration: const InputDecoration(
-                      labelText: 'เพศ', prefixIcon: Icon(Icons.wc_outlined)),
-                  items: const ['ชาย', 'หญิง', 'ไม่ระบุ']
-                      .map((value) =>
-                          DropdownMenuItem(value: value, child: Text(value)))
-                      .toList(),
-                  onChanged: (value) => setState(() => gender = value)),
-              _Input(
-                  controller: field('birthDate'),
-                  label: 'วันเกิด',
-                  icon: Icons.cake_outlined,
-                  readOnly: true,
-                  onTap: selectBirthDate),
-              _Input(
-                  controller: field('phone'),
-                  label: 'เบอร์โทรศัพท์',
-                  icon: Icons.phone_outlined,
-                  keyboardType: TextInputType.phone),
-              _Input(
-                  controller: field('address'),
-                  label: 'ที่อยู่',
-                  icon: Icons.home_outlined,
-                  maxLines: 3),
-            ]),
-            _FormSection(title: 'ข้อมูลสุขภาพ', children: [
-              DropdownButtonFormField<String>(
-                  initialValue: bloodType,
-                  decoration: const InputDecoration(
-                      labelText: 'หมู่เลือด',
-                      prefixIcon: Icon(Icons.bloodtype_outlined)),
-                  items: const ['A', 'B', 'AB', 'O', 'ไม่ทราบ']
-                      .map((value) =>
-                          DropdownMenuItem(value: value, child: Text(value)))
-                      .toList(),
-                  onChanged: (value) => setState(() => bloodType = value)),
-              Row(children: [
-                Expanded(
-                    child: _Input(
-                        controller: field('height'),
-                        label: 'ส่วนสูง (ซม.)',
-                        icon: Icons.height,
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true))),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: _Input(
-                        controller: field('weight'),
-                        label: 'น้ำหนัก (กก.)',
-                        icon: Icons.monitor_weight_outlined,
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true))),
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          child: ListView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: MeDisSpace.pagePadding,
+              children: [
+                _FormSection(title: 'ข้อมูลส่วนตัว', children: [
+                  _Input(
+                      controller: field('name'),
+                      label: 'ชื่อ–นามสกุล',
+                      icon: Icons.person_outline,
+                      validator: requiredText),
+                  DropdownButtonFormField<String>(
+                      initialValue: gender,
+                      decoration: const InputDecoration(
+                          labelText: 'เพศ',
+                          prefixIcon: Icon(Icons.wc_outlined)),
+                      items: const ['ชาย', 'หญิง', 'ไม่ระบุ']
+                          .map((value) => DropdownMenuItem(
+                              value: value, child: Text(value)))
+                          .toList(),
+                      onChanged: (value) => setState(() => gender = value)),
+                  _Input(
+                      controller: field('birthDate'),
+                      label: 'วันเกิด',
+                      icon: Icons.cake_outlined,
+                      readOnly: true,
+                      onTap: selectBirthDate),
+                  _Input(
+                      controller: field('phone'),
+                      label: 'เบอร์โทรศัพท์',
+                      icon: Icons.phone_outlined,
+                      keyboardType: TextInputType.phone),
+                  _Input(
+                      controller: field('address'),
+                      label: 'ที่อยู่',
+                      icon: Icons.home_outlined,
+                      maxLines: 3),
+                ]),
+                _FormSection(title: 'ข้อมูลสุขภาพ', children: [
+                  DropdownButtonFormField<String>(
+                      initialValue: bloodType,
+                      decoration: const InputDecoration(
+                          labelText: 'หมู่เลือด',
+                          prefixIcon: Icon(Icons.bloodtype_outlined)),
+                      items: const ['A', 'B', 'AB', 'O', 'ไม่ทราบ']
+                          .map((value) => DropdownMenuItem(
+                              value: value, child: Text(value)))
+                          .toList(),
+                      onChanged: (value) => setState(() => bloodType = value)),
+                  _Input(
+                      controller: field('height'),
+                      label: 'ส่วนสูง (ซม.)',
+                      icon: Icons.height,
+                      validator: positiveNumber,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true)),
+                  _Input(
+                      controller: field('weight'),
+                      label: 'น้ำหนัก (กก.)',
+                      icon: Icons.monitor_weight_outlined,
+                      validator: positiveNumber,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true)),
+                  _Input(
+                      controller: field('conditions'),
+                      label: 'โรคประจำตัว',
+                      icon: Icons.medical_information_outlined,
+                      maxLines: 2),
+                  _Input(
+                      controller: field('drugAllergies'),
+                      label: 'ประวัติแพ้ยา',
+                      icon: Icons.warning_amber_rounded,
+                      maxLines: 2),
+                ]),
+                _FormSection(title: 'ผู้ดูแลและกรณีฉุกเฉิน', children: [
+                  _Input(
+                      controller: field('caregiverName'),
+                      label: 'ชื่อผู้ดูแล',
+                      icon: Icons.person_outline),
+                  _Input(
+                      controller: field('relationship'),
+                      label: 'ความสัมพันธ์',
+                      icon: Icons.people_outline),
+                  _Input(
+                      controller: field('caregiverPhone'),
+                      label: 'เบอร์ผู้ดูแล',
+                      icon: Icons.phone_in_talk_outlined,
+                      keyboardType: TextInputType.phone),
+                  _Input(
+                      controller: field('emergencyPhone'),
+                      label: 'เบอร์ติดต่อฉุกเฉิน',
+                      icon: Icons.emergency_outlined,
+                      keyboardType: TextInputType.phone),
+                ]),
+                const SizedBox(height: 4),
+                SlideToConfirm(
+                    sliderKey: const Key('save-profile-slider'),
+                    enabled: !saving,
+                    onConfirmed: save,
+                    label: saving
+                        ? 'กำลังบันทึก...'
+                        : 'สไลด์เพื่อบันทึกข้อมูลผู้ป่วย'),
               ]),
-              _Input(
-                  controller: field('conditions'),
-                  label: 'โรคประจำตัว',
-                  icon: Icons.medical_information_outlined,
-                  maxLines: 2),
-              _Input(
-                  controller: field('drugAllergies'),
-                  label: 'ประวัติแพ้ยา',
-                  icon: Icons.warning_amber_rounded,
-                  maxLines: 2),
-            ]),
-            _FormSection(title: 'ผู้ดูแลและกรณีฉุกเฉิน', children: [
-              _Input(
-                  controller: field('caregiverName'),
-                  label: 'ชื่อผู้ดูแล',
-                  icon: Icons.person_outline),
-              _Input(
-                  controller: field('relationship'),
-                  label: 'ความสัมพันธ์',
-                  icon: Icons.people_outline),
-              _Input(
-                  controller: field('caregiverPhone'),
-                  label: 'เบอร์ผู้ดูแล',
-                  icon: Icons.phone_in_talk_outlined,
-                  keyboardType: TextInputType.phone),
-              _Input(
-                  controller: field('emergencyPhone'),
-                  label: 'เบอร์ติดต่อฉุกเฉิน',
-                  icon: Icons.emergency_outlined,
-                  keyboardType: TextInputType.phone),
-            ]),
-            const SizedBox(height: 4),
-            FilledButton.icon(
-                onPressed: saving ? null : save,
-                style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(54)),
-                icon: const Icon(Icons.save_outlined),
-                label: Text(saving ? 'กำลังบันทึก...' : 'บันทึกข้อมูลผู้ป่วย')),
-          ]),
         ),
       );
 }
@@ -213,21 +238,11 @@ class _FormSection extends StatelessWidget {
   final String title;
   final List<Widget> children;
   @override
-  Widget build(BuildContext context) => Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Card(
-          child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title,
-                        style: const TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 16),
-                    ...children
-                        .expand((child) => [child, const SizedBox(height: 13)])
-                  ]))));
+  Widget build(BuildContext context) => MeDisSection(
+      title: title,
+      children: children
+          .expand((child) => [child, const SizedBox(height: 16)])
+          .toList());
 }
 
 class _Input extends StatelessWidget {
@@ -253,6 +268,8 @@ class _Input extends StatelessWidget {
       controller: controller,
       keyboardType: keyboardType,
       maxLines: maxLines,
+      textInputAction:
+          maxLines > 1 ? TextInputAction.newline : TextInputAction.next,
       readOnly: readOnly,
       onTap: onTap,
       validator: validator,

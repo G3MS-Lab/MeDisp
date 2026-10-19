@@ -62,7 +62,13 @@ class _StoredImageState extends State<_StoredImage> {
               SizedBox(width: widget.width, height: widget.height);
         }
         if (snapshot.connectionState != ConnectionState.done) {
-          return SizedBox(width: widget.width, height: widget.height);
+          return SizedBox(
+              width: widget.width,
+              height: widget.height,
+              child: const Center(
+                  child: SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2))));
         }
         return Image.memory(snapshot.data!,
             width: widget.width,

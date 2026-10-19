@@ -1,6 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../theme/medis_theme.dart';
+
 import '../domain/models.dart';
+
+enum DayMedicationStatus {
+  completed,
+  partial,
+  missed,
+  pending,
+  taken,
+}
 
 class MeDisEventCalendar extends StatelessWidget {
   const MeDisEventCalendar({
@@ -8,6 +18,7 @@ class MeDisEventCalendar extends StatelessWidget {
     required this.intakes,
     required this.allergies,
     required this.onDateSelected,
+    this.drugs = const [],
     this.showMedicationEvents = true,
     this.showAllergyEvents = true,
     super.key,
@@ -16,6 +27,7 @@ class MeDisEventCalendar extends StatelessWidget {
   final DateTime selectedDate;
   final List<IntakeRecord> intakes;
   final List<AllergyRecord> allergies;
+  final List<Drug> drugs;
   final ValueChanged<DateTime> onDateSelected;
   final bool showMedicationEvents;
   final bool showAllergyEvents;
@@ -40,6 +52,53 @@ class MeDisEventCalendar extends StatelessWidget {
     onDateSelected(target);
   }
 
+  DayMedicationStatus? _getMedicationStatus(
+      DateTime date, Set<MealType> completedMeals, bool hasPrn) {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final targetDate = DateUtils.dateOnly(date);
+
+    if (targetDate.isAfter(today)) return null;
+
+    final activeScheduledDrugs = drugs.where((drug) {
+      if (drug.isPrn) return false;
+      if (drug.addedAt != null) {
+        final added = DateUtils.dateOnly(drug.addedAt!);
+        if (targetDate.isBefore(added)) return false;
+      }
+      if (drug.stoppedAt != null) {
+        final stopped = DateUtils.dateOnly(drug.stoppedAt!);
+        if (targetDate.isAfter(stopped)) return false;
+      }
+      return true;
+    }).toList();
+
+    final expectedMeals = <MealType>{};
+    for (final drug in activeScheduledDrugs) {
+      for (final instruction in drug.instructions) {
+        expectedMeals.add(instruction.meal);
+      }
+    }
+
+    if (activeScheduledDrugs.isNotEmpty && expectedMeals.isNotEmpty) {
+      if (expectedMeals.every(completedMeals.contains)) {
+        return DayMedicationStatus.completed;
+      } else if (completedMeals.isNotEmpty || hasPrn) {
+        return DayMedicationStatus.partial;
+      } else {
+        if (DateUtils.isSameDay(targetDate, today)) {
+          return DayMedicationStatus.pending;
+        } else {
+          return DayMedicationStatus.missed;
+        }
+      }
+    } else {
+      if (completedMeals.isNotEmpty || hasPrn) {
+        return DayMedicationStatus.taken;
+      }
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final first = DateTime(selectedDate.year, selectedDate.month);
@@ -59,7 +118,7 @@ class MeDisEventCalendar extends StatelessWidget {
                     '${_months[selectedDate.month - 1]} ${selectedDate.year + 543}',
                     textAlign: TextAlign.center,
                     style: const TextStyle(
-                        fontSize: 19, fontWeight: FontWeight.w800))),
+                        fontSize: 19, fontWeight: FontWeight.w700))),
             IconButton(
                 tooltip: 'เดือนถัดไป',
                 onPressed: () => _changeMonth(1),
@@ -73,16 +132,21 @@ class MeDisEventCalendar extends StatelessWidget {
                         child: Text(day,
                             textAlign: TextAlign.center,
                             style: const TextStyle(
-                                color: Color(0xFF8291A5),
+                                color: MeDisColors.subtle,
                                 fontWeight: FontWeight.w700))))
                     .toList()),
           ),
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 7, childAspectRatio: .66),
-            itemCount: 42,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 7,
+                mainAxisExtent:
+                    (showMedicationEvents && showAllergyEvents
+                            ? 94
+                            : (showMedicationEvents ? 78 : 64)) +
+                        (MediaQuery.textScalerOf(context).scale(15) - 15) * 2),
+            itemCount: ((offset + dayCount + 6) ~/ 7) * 7,
             itemBuilder: (_, index) {
               final day = index - offset + 1;
               if (day < 1 || day > dayCount) return const SizedBox();
@@ -105,6 +169,9 @@ class MeDisEventCalendar extends StatelessWidget {
                       .where((record) => DateUtils.isSameDay(record.date, date))
                       .length
                   : 0;
+              final dayStatus = showMedicationEvents
+                  ? _getMedicationStatus(date, meals, hasPrn)
+                  : null;
               final selected = DateUtils.isSameDay(selectedDate, date);
               final today = DateUtils.isSameDay(DateTime.now(), date);
               return Padding(
@@ -117,14 +184,14 @@ class MeDisEventCalendar extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     decoration: BoxDecoration(
                       color: selected
-                          ? const Color(0xFFE3EEFC)
+                          ? MeDisColors.primarySoft
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
                           color: selected
-                              ? const Color(0xFF397BD9)
+                              ? MeDisColors.primary
                               : today
-                                  ? const Color(0xFF9ABDEA)
+                                  ? MeDisColors.border
                                   : Colors.transparent,
                           width: selected ? 1.5 : 1),
                     ),
@@ -132,10 +199,10 @@ class MeDisEventCalendar extends StatelessWidget {
                       Text('$day',
                           style: TextStyle(
                               fontWeight:
-                                  selected ? FontWeight.w800 : FontWeight.w500,
-                              color: const Color(0xFF253246))),
+                                  selected ? FontWeight.w700 : FontWeight.w500,
+                              color: MeDisColors.text)),
                       const Spacer(),
-                      if (showMedicationEvents)
+                      if (showMedicationEvents) ...[
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -146,16 +213,23 @@ class MeDisEventCalendar extends StatelessWidget {
                                 width: 5,
                                 height: 5,
                                 decoration: const BoxDecoration(
-                                  color: Color(0xFF8B5CF6),
+                                  color: MeDisColors.prn,
                                   shape: BoxShape.circle,
                                 ),
                               ),
                             ],
                           ],
                         ),
-                      if (allergyCount > 0)
+                        if (dayStatus != null) ...[
+                          const SizedBox(height: 2),
+                          _DayStatusBadge(status: dayStatus),
+                        ],
+                      ],
+                      if (allergyCount > 0) ...[
+                        const SizedBox(height: 2),
                         const Icon(Icons.warning_rounded,
-                            size: 16, color: Color(0xFFE04B4B)),
+                            size: 15, color: MeDisColors.error),
+                      ],
                     ]),
                   ),
                 ),
@@ -167,17 +241,76 @@ class MeDisEventCalendar extends StatelessWidget {
             if (showMedicationEvents) ...[
               ...MealType.values.map((meal) =>
                   _LegendDot(color: meal.color, label: 'ยา${meal.label}')),
-              const _LegendDot(
-                  color: Color(0xFF8B5CF6), label: 'ยาตามอาการ'),
+              const _LegendDot(color: MeDisColors.prn, label: 'ยาตามอาการ'),
+              const _LegendDot(color: MeDisColors.success, label: 'ทานครบ'),
+              const _LegendDot(color: MeDisColors.warning, label: 'ทานบางส่วน'),
+              const _LegendDot(color: MeDisColors.error, label: 'ไม่ได้ทาน'),
             ],
             if (showAllergyEvents)
               const Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.warning_rounded, size: 17, color: Color(0xFFE04B4B)),
+                Icon(Icons.warning_rounded, size: 17, color: MeDisColors.error),
                 SizedBox(width: 5),
                 Text('อาการไม่พึงประสงค์', style: TextStyle(fontSize: 12))
               ])
           ]),
         ]),
+      ),
+    );
+  }
+}
+
+class _DayStatusBadge extends StatelessWidget {
+  const _DayStatusBadge({required this.status});
+  final DayMedicationStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color, bgColor) = switch (status) {
+      DayMedicationStatus.completed => (
+          'ทานครบ',
+          MeDisColors.success,
+          MeDisColors.successSoft
+        ),
+      DayMedicationStatus.partial => (
+          'ทานบางส่วน',
+          MeDisColors.warning,
+          MeDisColors.warningSoft
+        ),
+      DayMedicationStatus.missed => (
+          'ไม่ได้ทาน',
+          MeDisColors.error,
+          MeDisColors.errorSoft
+        ),
+      DayMedicationStatus.pending => (
+          'ยังไม่ทาน',
+          MeDisColors.muted,
+          MeDisColors.primarySoft
+        ),
+      DayMedicationStatus.taken => (
+          'ทานแล้ว',
+          MeDisColors.success,
+          MeDisColors.successSoft
+        ),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          label,
+          maxLines: 1,
+          style: TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            color: color,
+            height: 1.15,
+          ),
+        ),
       ),
     );
   }
@@ -205,7 +338,7 @@ class _MedicationMarkerGrid extends StatelessWidget {
                           color: completedMeals
                                   .contains(MealType.values[row * 2 + column])
                               ? MealType.values[row * 2 + column].color
-                              : const Color(0xFFE5EAF0),
+                              : MeDisColors.border,
                         ),
                       ),
                     ),

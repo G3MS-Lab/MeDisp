@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../theme/medis_theme.dart';
+
 import '../application/app_scope.dart';
 import '../domain/models.dart';
 import '../widgets/medis_app_bar.dart';
+import '../widgets/medis_ui.dart';
 import '../widgets/local_image.dart';
 import 'medication_form_navigation.dart';
 
@@ -23,136 +26,145 @@ class DrugDetailScreen extends StatelessWidget {
         slots.fold<int>(0, (total, slot) => total + slot.remaining);
     final capacity = slots.fold<int>(0, (total, slot) => total + slot.capacity);
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FC),
+      backgroundColor: MeDisColors.background,
       appBar: const MeDisAppBar('ข้อมูลยา'),
-      body: ListView(padding: const EdgeInsets.all(20), children: [
-        _DrugHeader(drug: drug),
-        if (slots.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            key: const Key('edit-medication'),
-            onPressed: controller.connected
-                ? () => openMedicationForm(context, slots.first)
-                : null,
-            icon: const Icon(Icons.edit_outlined),
-            label: const Text('แก้ไขยา'),
-            style:
-                FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-          ),
-          const SizedBox(height: 10),
-          OutlinedButton.icon(
-            key: const Key('refill-medication'),
-            onPressed: controller.connected && !slots.first.isFull
-                ? () => openMedicationRefill(context, slots.first)
-                : null,
-            icon: const Icon(Icons.add_circle_outline),
-            label: const Text('เพิ่มยาในช่อง'),
-            style: OutlinedButton.styleFrom(
-                minimumSize: const Size.fromHeight(48)),
-          ),
-        ],
-        const SizedBox(height: 16),
-        _InventorySection(
-            slots: slots, remaining: remaining, capacity: capacity),
-        const SizedBox(height: 16),
-        if (drug.isPrn)
-          _SectionCard(
-            icon: Icons.healing_rounded,
-            title: 'คำแนะนำการทานยาตามอาการ (PRN)',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const CircleAvatar(
-                    backgroundColor: Color(0xFFEDE9FE),
-                    child: Icon(Icons.healing, color: Color(0xFF7C3AED)),
-                  ),
-                  title: const Text('อาการที่ทาน (ข้อบ่งใช้)'),
-                  subtitle: Text(
-                    drug.prnConfig?.symptom.isNotEmpty == true
-                        ? drug.prnConfig!.symptom
-                        : 'ทานเมื่อมีอาการ',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w700, color: Color(0xFF6D28D9)),
-                  ),
+      body: ListView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: MeDisSpace.pagePadding,
+          children: [
+            _DrugHeader(drug: drug),
+            if (slots.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                key: const Key('edit-medication'),
+                onPressed: controller.connected
+                    ? () => openMedicationForm(context, slots.first)
+                    : null,
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('แก้ไขยา'),
+                style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48)),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                key: const Key('refill-medication'),
+                onPressed: controller.connected && !slots.first.isFull
+                    ? () => openMedicationRefill(context, slots.first)
+                    : null,
+                icon: const Icon(Icons.add_circle_outline),
+                label: const Text('เพิ่มยาในช่อง'),
+                style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48)),
+              ),
+            ],
+            const SizedBox(height: 16),
+            _InventorySection(
+                slots: slots, remaining: remaining, capacity: capacity),
+            const SizedBox(height: 16),
+            if (drug.isPrn)
+              _SectionCard(
+                icon: Icons.healing_rounded,
+                title: 'คำแนะนำการทานยาตามอาการ (PRN)',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const CircleAvatar(
+                        backgroundColor: MeDisColors.prnSoft,
+                        child: Icon(Icons.healing, color: MeDisColors.prn),
+                      ),
+                      title: const Text('อาการที่ทาน (ข้อบ่งใช้)'),
+                      subtitle: Text(
+                        drug.prnConfig?.symptom.isNotEmpty == true
+                            ? drug.prnConfig!.symptom
+                            : 'ทานเมื่อมีอาการ',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: MeDisColors.prn),
+                      ),
+                    ),
+                    const Divider(),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const CircleAvatar(
+                        backgroundColor: MeDisColors.primarySoft,
+                        child:
+                            Icon(Icons.medication, color: MeDisColors.primary),
+                      ),
+                      title: const Text('ขนาดรับประทานต่อครั้ง'),
+                      subtitle: Text(
+                        'ครั้งละ ${drug.prnConfig?.quantity ?? 1} เม็ด',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    const Divider(),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const CircleAvatar(
+                        backgroundColor: MeDisColors.warningSoft,
+                        child: Icon(Icons.timer_outlined,
+                            color: MeDisColors.warning),
+                      ),
+                      title: const Text('ระยะห่างขั้นต่ำในการทานซ้ำ'),
+                      subtitle: Text(
+                        'ทุก ${drug.prnConfig?.minIntervalHours ?? 4} ชั่วโมงเมื่อมีอาการ',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    const Divider(),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const CircleAvatar(
+                        backgroundColor: MeDisColors.errorSoft,
+                        child: Icon(Icons.warning_amber_rounded,
+                            color: MeDisColors.error),
+                      ),
+                      title: const Text('ปริมาณสูงสุดต่อวัน (24 ชม.)'),
+                      subtitle: Text(
+                        'ไม่เกิน ${drug.prnConfig?.maxDosesPerDay ?? 4} ครั้งต่อวัน',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
                 ),
-                const Divider(),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const CircleAvatar(
-                    backgroundColor: Color(0xFFE0F2FE),
-                    child: Icon(Icons.medication, color: Color(0xFF0284C7)),
-                  ),
-                  title: const Text('ขนาดรับประทานต่อครั้ง'),
-                  subtitle: Text(
-                    'ครั้งละ ${drug.prnConfig?.quantity ?? 1} เม็ด',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
+              )
+            else
+              _SectionCard(
+                icon: Icons.schedule_outlined,
+                title: 'ตารางการรับประทาน',
+                child: Column(
+                  children: drug.instructions
+                      .map((instruction) => _DoseRow(instruction: instruction))
+                      .toList(),
                 ),
-                const Divider(),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const CircleAvatar(
-                    backgroundColor: Color(0xFFFEF3C7),
-                    child: Icon(Icons.timer_outlined, color: Color(0xFFD97706)),
-                  ),
-                  title: const Text('ระยะห่างขั้นต่ำในการทานซ้ำ'),
-                  subtitle: Text(
-                    'ทุก ${drug.prnConfig?.minIntervalHours ?? 4} ชั่วโมงเมื่อมีอาการ',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                const Divider(),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const CircleAvatar(
-                    backgroundColor: Color(0xFFFEE2E2),
-                    child: Icon(Icons.warning_amber_rounded,
-                        color: Color(0xFFDC2626)),
-                  ),
-                  title: const Text('ปริมาณสูงสุดต่อวัน (24 ชม.)'),
-                  subtitle: Text(
-                    'ไม่เกิน ${drug.prnConfig?.maxDosesPerDay ?? 4} ครั้งต่อวัน',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ],
+              ),
+            const SizedBox(height: 16),
+            _SectionCard(
+              icon: Icons.health_and_safety_outlined,
+              title: 'รายละเอียดและข้อควรระวัง',
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(15),
+                decoration: BoxDecoration(
+                    color: MeDisColors.warningSoft,
+                    borderRadius: BorderRadius.circular(14)),
+                child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.info_outline,
+                          color: MeDisColors.warning),
+                      const SizedBox(width: 11),
+                      Expanded(
+                          child: Text(
+                              drug.notes.trim().isEmpty
+                                  ? 'ไม่มีข้อมูลหรือข้อควรระวังเพิ่มเติม'
+                                  : drug.notes,
+                              style: const TextStyle(height: 1.45)))
+                    ]),
+              ),
             ),
-          )
-        else
-          _SectionCard(
-            icon: Icons.schedule_outlined,
-            title: 'ตารางการรับประทาน',
-            child: Column(
-              children: drug.instructions
-                  .map((instruction) => _DoseRow(instruction: instruction))
-                  .toList(),
-            ),
-          ),
-        const SizedBox(height: 16),
-        _SectionCard(
-          icon: Icons.health_and_safety_outlined,
-          title: 'รายละเอียดและข้อควรระวัง',
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(15),
-            decoration: BoxDecoration(
-                color: const Color(0xFFFFF8E8),
-                borderRadius: BorderRadius.circular(14)),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Icon(Icons.info_outline, color: Color(0xFFE49B22)),
-              const SizedBox(width: 11),
-              Expanded(
-                  child: Text(
-                      drug.notes.trim().isEmpty
-                          ? 'ไม่มีข้อมูลหรือข้อควรระวังเพิ่มเติม'
-                          : drug.notes,
-                      style: const TextStyle(height: 1.45)))
-            ]),
-          ),
-        ),
-      ]),
+          ]),
     );
   }
 }
@@ -171,7 +183,7 @@ class _DrugHeader extends StatelessWidget {
             child: drug.labelImagePath == null
                 ? const _LabelPlaceholder()
                 : localImage(drug.labelImagePath!,
-                    fit: BoxFit.cover,
+                    fit: BoxFit.contain,
                     errorBuilder: (_, __, ___) => const _LabelPlaceholder()),
           ),
           Padding(
@@ -181,10 +193,10 @@ class _DrugHeader extends StatelessWidget {
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                      color: const Color(0xFFE8F0FC),
+                      color: MeDisColors.primarySoft,
                       borderRadius: BorderRadius.circular(14)),
                   child: const Icon(Icons.medication_rounded,
-                      color: Color(0xFF397BD9), size: 28)),
+                      color: MeDisColors.primary, size: 28)),
               const SizedBox(width: 14),
               Expanded(
                   child: Column(
@@ -192,14 +204,17 @@ class _DrugHeader extends StatelessWidget {
                       children: [
                     Text(drug.name,
                         style: const TextStyle(
-                            fontSize: 24, fontWeight: FontWeight.w800)),
-                    Text('${drug.instructions.length} ช่วงเวลาต่อวัน',
-                        style: const TextStyle(color: Color(0xFF68778B))),
+                            fontSize: 24, fontWeight: FontWeight.w700)),
+                    Text(
+                        drug.isPrn
+                            ? 'ทานเมื่อมีอาการ (PRN)'
+                            : '${drug.instructions.length} ช่วงเวลาต่อวัน',
+                        style: const TextStyle(color: MeDisColors.muted)),
                     if (drug.stoppedAt != null)
                       Text(
                         'หยุดยาเมื่อ ${drug.stoppedAt!.day}/${drug.stoppedAt!.month}/${drug.stoppedAt!.year + 543}',
                         style: const TextStyle(
-                            color: Color(0xFFD83B3B),
+                            color: MeDisColors.error,
                             fontWeight: FontWeight.w700),
                       )
                   ]))
@@ -224,10 +239,10 @@ class _InventorySection extends StatelessWidget {
             ? Container(
                 padding: const EdgeInsets.all(15),
                 decoration: BoxDecoration(
-                    color: const Color(0xFFF1F4F8),
+                    color: MeDisColors.background,
                     borderRadius: BorderRadius.circular(14)),
                 child: const Row(children: [
-                  Icon(Icons.inventory_2_outlined, color: Colors.grey),
+                  Icon(Icons.inventory_2_outlined, color: MeDisColors.muted),
                   SizedBox(width: 10),
                   Expanded(child: Text('ยานี้ไม่ได้อยู่ในเครื่องจ่ายยาแล้ว'))
                 ]))
@@ -260,10 +275,10 @@ class _InventorySection extends StatelessWidget {
                     child: LinearProgressIndicator(
                         minHeight: 9,
                         value: capacity == 0 ? 0 : remaining / capacity,
-                        backgroundColor: const Color(0xFFE5EAF0),
+                        backgroundColor: MeDisColors.border,
                         color: remaining <= capacity * .2
-                            ? const Color(0xFFE04B4B)
-                            : const Color(0xFF55B97A))),
+                            ? MeDisColors.error
+                            : MeDisColors.success)),
               ]),
       );
 }
@@ -279,18 +294,18 @@ class _StatBox extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         decoration: BoxDecoration(
-            color: const Color(0xFFF4F7FC),
+            color: MeDisColors.background,
             borderRadius: BorderRadius.circular(13)),
         child: Column(children: [
-          Icon(icon, color: const Color(0xFF397BD9), size: 22),
+          Icon(icon, color: MeDisColors.primary, size: 22),
           const SizedBox(height: 5),
           Text(label,
-              style: const TextStyle(fontSize: 11, color: Color(0xFF8291A5))),
+              style: const TextStyle(fontSize: 11, color: MeDisColors.subtle)),
           const SizedBox(height: 2),
           Text(value,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w800))
+              style: const TextStyle(fontWeight: FontWeight.w700))
         ]),
       );
 }
@@ -324,10 +339,10 @@ class _DoseRow extends StatelessWidget {
                   children: [
                 Text('มื้อ${instruction.meal.label}',
                     style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w800)),
+                        fontSize: 16, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 3),
                 Text('${instruction.quantity} เม็ดต่อครั้ง',
-                    style: const TextStyle(color: Color(0xFF68778B)))
+                    style: const TextStyle(color: MeDisColors.muted))
               ])),
           Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -339,7 +354,7 @@ class _DoseRow extends StatelessWidget {
                         ? Icons.restaurant_menu
                         : Icons.restaurant,
                     size: 15,
-                    color: const Color(0xFF397BD9)),
+                    color: MeDisColors.primary),
                 const SizedBox(width: 4),
                 Text(instruction.beforeFood ? 'ก่อนอาหาร' : 'หลังอาหาร',
                     style: const TextStyle(
@@ -357,37 +372,20 @@ class _SectionCard extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Icon(icon, color: const Color(0xFF397BD9)),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(title,
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w800)),
-              )
-            ]),
-            const Divider(height: 24),
-            child,
-          ]),
-        ),
-      );
+  Widget build(BuildContext context) => MeDisSection(
+      title: title, icon: icon, bottomSpacing: 0, children: [child]);
 }
 
 class _LabelPlaceholder extends StatelessWidget {
   const _LabelPlaceholder();
   @override
   Widget build(BuildContext context) => Container(
-        color: const Color(0xFFEAF2FD),
+        color: MeDisColors.primarySoft,
         alignment: Alignment.center,
         child: const Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.image_outlined, size: 48, color: Color(0xFF7FA9DC)),
+          Icon(Icons.image_outlined, size: 48, color: MeDisColors.subtle),
           SizedBox(height: 8),
-          Text('ยังไม่มีรูปฉลากยา', style: TextStyle(color: Color(0xFF68778B)))
+          Text('ยังไม่มีรูปฉลากยา', style: TextStyle(color: MeDisColors.muted))
         ]),
       );
 }

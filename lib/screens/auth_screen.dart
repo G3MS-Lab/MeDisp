@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../theme/medis_theme.dart';
+
 import '../application/app_scope.dart';
+import '../widgets/medis_ui.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -28,12 +31,10 @@ class _AuthScreenState extends State<AuthScreen> {
     if (AppScope.of(context).busy) return;
     if (!formKey.currentState!.validate()) return;
     final controller = AppScope.of(context);
-    final success = registerMode
-        ? await controller.register(name.text, email.text, password.text)
-        : await controller.signIn(email.text, password.text);
-    if (!success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(controller.errorMessage ?? 'ไม่สามารถดำเนินการได้')));
+    if (registerMode) {
+      await controller.register(name.text, email.text, password.text);
+    } else {
+      await controller.signIn(email.text, password.text);
     }
   }
 
@@ -44,28 +45,30 @@ class _AuthScreenState extends State<AuthScreen> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             padding: const EdgeInsets.all(28),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 430),
               child: Form(
                 key: formKey,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
                 child: Column(children: [
                   const CircleAvatar(
-                      radius: 46,
-                      backgroundColor: Color(0xFF6AA6FF),
+                      radius: 36,
+                      backgroundColor: MeDisColors.primarySoft,
                       child: Icon(Icons.monitor_heart_outlined,
-                          size: 50, color: Colors.white)),
+                          size: 40, color: MeDisColors.primary)),
                   const SizedBox(height: 18),
                   const Text('MeDis',
                       style: TextStyle(
                           fontSize: 34,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF313131))),
+                          fontWeight: FontWeight.w700,
+                          color: MeDisColors.text)),
                   Text(
                       registerMode
                           ? 'สร้างบัญชีผู้ป่วย'
                           : 'เข้าสู่ระบบเพื่อจัดการยา',
-                      style: const TextStyle(color: Colors.grey)),
+                      style: const TextStyle(color: MeDisColors.muted)),
                   const SizedBox(height: 30),
                   if (registerMode) ...[
                     TextFormField(
@@ -82,6 +85,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   ],
                   TextFormField(
                       controller: email,
+                      autofillHints: const [AutofillHints.email],
                       keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.next,
                       autocorrect: false,
@@ -95,12 +99,18 @@ class _AuthScreenState extends State<AuthScreen> {
                   const SizedBox(height: 14),
                   TextFormField(
                       controller: password,
+                      autofillHints: registerMode
+                          ? const [AutofillHints.newPassword]
+                          : const [AutofillHints.password],
                       obscureText: obscurePassword,
                       onFieldSubmitted: (_) => submit(),
                       decoration: InputDecoration(
                           labelText: 'รหัสผ่าน',
                           prefixIcon: const Icon(Icons.lock_outline),
                           suffixIcon: IconButton(
+                              tooltip: obscurePassword
+                                  ? 'แสดงรหัสผ่าน'
+                                  : 'ซ่อนรหัสผ่าน',
                               onPressed: () => setState(
                                   () => obscurePassword = !obscurePassword),
                               icon: Icon(obscurePassword
@@ -110,10 +120,17 @@ class _AuthScreenState extends State<AuthScreen> {
                               value.length < (registerMode ? 8 : 6)
                           ? 'รหัสผ่านต้องมีอย่างน้อย ${registerMode ? 8 : 6} ตัว'
                           : null),
+                  if (controller.errorMessage != null) ...[
+                    const SizedBox(height: 16),
+                    MeDisNotice(
+                        message: controller.errorMessage!,
+                        color: MeDisColors.error,
+                        icon: Icons.error_outline),
+                  ],
                   const SizedBox(height: 22),
                   SizedBox(
                       width: double.infinity,
-                      height: 50,
+                      // The button grows with accessibility text sizes.
                       child: FilledButton(
                           onPressed: controller.busy ? null : submit,
                           child: controller.busy
@@ -123,6 +140,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                     const SizedBox.square(
                                         dimension: 22,
                                         child: CircularProgressIndicator(
+                                            color: Colors.white,
                                             strokeWidth: 2)),
                                     const SizedBox(width: 10),
                                     Text(registerMode
@@ -136,7 +154,11 @@ class _AuthScreenState extends State<AuthScreen> {
                   TextButton(
                       onPressed: controller.busy
                           ? null
-                          : () => setState(() => registerMode = !registerMode),
+                          : () => setState(() {
+                                registerMode = !registerMode;
+                                formKey.currentState?.reset();
+                                controller.errorMessage = null;
+                              }),
                       child: Text(registerMode
                           ? 'มีบัญชีแล้ว? เข้าสู่ระบบ'
                           : 'ยังไม่มีบัญชี? สมัครสมาชิก')),
@@ -144,7 +166,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   const Text(
                       'ข้อมูลยาเป็นข้อมูลสุขภาพ โปรดใช้รหัสผ่านที่ไม่ซ้ำกับบริการอื่น',
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      style: TextStyle(fontSize: 12, color: MeDisColors.muted)),
                 ]),
               ),
             ),

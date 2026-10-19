@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../theme/medis_theme.dart';
+
 import '../application/app_scope.dart';
 import '../domain/models.dart';
 import '../widgets/medis_app_bar.dart';
+import '../widgets/medis_ui.dart';
 import 'drug_detail_screen.dart';
 import 'medication_form_navigation.dart';
 
@@ -14,44 +17,55 @@ class DispenserScreen extends StatelessWidget {
     final controller = AppScope.of(context);
     return Scaffold(
       appBar: const MeDisAppBar('จัดการยา'),
-      body: ListView(padding: const EdgeInsets.all(24), children: [
-        Card(
-          child: ListTile(
-            leading: Icon(Icons.bluetooth,
-                color: controller.connected ? Colors.green : Colors.grey),
-            title: Text(controller.connected
-                ? 'MeDispenser พร้อมใช้งาน'
-                : 'ยังไม่ได้เชื่อมต่อ'),
-            subtitle: Text(controller.connected
-                ? 'สไลด์ยืนยันก่อนเพิ่มหรือแก้ไขยา'
-                : 'เชื่อมต่อเครื่องก่อนเพิ่มหรือแก้ไขยา'),
-            trailing: Switch(
-                value: controller.connected,
-                onChanged: (_) => controller.toggleConnection()),
-          ),
-        ),
-        const SizedBox(height: 22),
-        const Text('ช่องใส่ยา',
-            style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 14),
-        LayoutBuilder(builder: (context, constraints) {
-          final largeText = MediaQuery.textScalerOf(context).scale(14) > 18;
-          final columns = constraints.maxWidth < 300 || largeText ? 1 : 2;
-          final cardWidth =
-              (constraints.maxWidth - 15 * (columns - 1)) / columns;
-          return Wrap(
-            spacing: 15,
-            runSpacing: 15,
-            children: [
-              for (final slot in controller.slots)
-                SizedBox(
-                  width: cardWidth,
-                  child: _SlotCard(slot: slot, enabled: controller.connected),
-                ),
-            ],
-          );
-        }),
-      ]),
+      body: ListView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: MeDisSpace.pagePadding,
+          children: [
+            Card(
+              child: ListTile(
+                leading: Icon(Icons.bluetooth,
+                    color: controller.connected
+                        ? MeDisColors.success
+                        : MeDisColors.muted),
+                title: Text(controller.connected
+                    ? 'MeDispenser พร้อมใช้งาน'
+                    : 'ยังไม่ได้เชื่อมต่อ'),
+                subtitle: Text(controller.connected
+                    ? 'สไลด์ยืนยันก่อนเพิ่มหรือแก้ไขยา'
+                    : 'เชื่อมต่อเครื่องก่อนเพิ่มหรือแก้ไขยา'),
+                trailing: Switch(
+                    value: controller.connected,
+                    onChanged: controller.busy
+                        ? null
+                        : (_) => controller.toggleConnection()),
+              ),
+            ),
+            const SizedBox(height: 22),
+            const Text('ช่องใส่ยา',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const Text('แตะช่องว่างเพื่อเพิ่มยา หรือแตะยาเพื่อดูรายละเอียด',
+                style: TextStyle(color: MeDisColors.muted)),
+            const SizedBox(height: 14),
+            LayoutBuilder(builder: (context, constraints) {
+              final largeText = MediaQuery.textScalerOf(context).scale(14) > 18;
+              final columns = constraints.maxWidth < 300 || largeText ? 1 : 2;
+              final cardWidth =
+                  (constraints.maxWidth - 15 * (columns - 1)) / columns;
+              return Wrap(
+                spacing: 15,
+                runSpacing: 15,
+                children: [
+                  for (final slot in controller.slots)
+                    SizedBox(
+                      width: cardWidth,
+                      child:
+                          _SlotCard(slot: slot, enabled: controller.connected),
+                    ),
+                ],
+              );
+            }),
+          ]),
     );
   }
 }
@@ -75,49 +89,51 @@ class _SlotCard extends StatelessWidget {
           onLongPress: slot.isEmpty
               ? null
               : () async {
-                  final remove = await showDialog<bool>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: Text(
-                          'นำ ${slot.drug!.name} ออกจากช่อง ${slot.number}?'),
-                      content: const Text(
-                          'ตารางยาจะอัปเดตทันที แต่ประวัติการทานยาจะไม่ถูกลบ'),
-                      actions: [
-                        TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('ยกเลิก')),
-                        FilledButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            child: const Text('นำออก')),
-                      ],
-                    ),
-                  );
+                  final remove = await confirmMeDisAction(context,
+                      title: 'นำ ${slot.drug!.name} ออกจากช่อง ${slot.number}?',
+                      message:
+                          'ตารางยาจะอัปเดตทันที แต่ประวัติการทานยาจะไม่ถูกลบ',
+                      actionLabel: 'นำยาออก',
+                      destructive: true);
                   if (remove == true && context.mounted) {
-                    await AppScope.of(context).clearSlot(slot.number);
+                    try {
+                      await AppScope.of(context).clearSlot(slot.number);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('นำยาออกจากช่องแล้ว')));
+                      }
+                    } catch (error) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(error
+                                .toString()
+                                .replaceFirst('Bad state: ', ''))));
+                      }
+                    }
                   }
                 },
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               CircleAvatar(
-                  radius: 27,
-                  backgroundColor: slot.isEmpty
-                      ? const Color(0xFFE8F0FC)
-                      : const Color(0xFFDFF6E5),
+                  radius: 30,
+                  backgroundColor: MeDisColors.primarySoft,
                   child: Icon(slot.isEmpty ? Icons.add : Icons.medication,
-                      color:
-                          slot.isEmpty ? const Color(0xFF6AA6FF) : Colors.green,
-                      size: 30)),
+                      color: MeDisColors.primary, size: 30)),
               const SizedBox(height: 10),
               Text('ช่อง ${slot.number}',
-                  style: const TextStyle(fontWeight: FontWeight.w700)),
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w700)),
               Text(slot.drug?.name ?? 'ว่าง',
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 18)),
               Text(
                   slot.isEmpty
                       ? 'แตะเพื่อเพิ่มยา'
                       : 'คงเหลือ ${slot.remaining} เม็ด',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  style:
+                      const TextStyle(fontSize: 16, color: MeDisColors.muted)),
             ]),
           ),
         ),

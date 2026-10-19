@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../theme/medis_theme.dart';
+
 import '../application/app_scope.dart';
 import '../domain/adherence_service.dart';
 import '../widgets/medis_app_bar.dart';
+import '../widgets/medis_ui.dart';
 
 class AdherenceScreen extends StatefulWidget {
   const AdherenceScreen({super.key});
@@ -22,7 +25,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
       initialDateRange: DateTimeRange(start: rangeStart, end: rangeEnd),
-      helpText: 'เลือกช่วงวันที่สำหรับ Adherence Rate',
+      helpText: 'เลือกช่วงวันที่ดูความสม่ำเสมอ',
       saveText: 'เลือกช่วงนี้',
     );
     if (selected != null) {
@@ -45,69 +48,76 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
         rangeStart: rangeStart,
         rangeEnd: rangeEnd);
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FC),
-      appBar: const MeDisAppBar('Adherence Rate'),
-      body: ListView(padding: const EdgeInsets.all(20), children: [
-        DropdownButtonFormField<AdherencePeriod>(
-          initialValue: period,
-          decoration: const InputDecoration(
-            labelText: 'รูปแบบรายงาน',
-            prefixIcon: Icon(Icons.bar_chart_outlined),
-          ),
-          items: const [
-            DropdownMenuItem(value: AdherencePeriod.day, child: Text('รายวัน')),
-            DropdownMenuItem(
-                value: AdherencePeriod.week, child: Text('รายสัปดาห์')),
-            DropdownMenuItem(
-                value: AdherencePeriod.month, child: Text('รายเดือน')),
-            DropdownMenuItem(
-                value: AdherencePeriod.custom, child: Text('กำหนดช่วงวันที่')),
-          ],
-          onChanged: (value) {
-            if (value == null) return;
-            if (value == AdherencePeriod.custom) {
-              _selectRange();
-            } else {
-              setState(() {
-                period = value;
-                rangeEnd = DateUtils.dateOnly(DateTime.now());
-              });
-            }
-          },
-        ),
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: _selectRange,
-          icon: const Icon(Icons.date_range_outlined),
-          label: Text(
-              'ตั้งแต่ ${_shortDate(report.start)} ถึง ${_shortDate(report.end)}'),
-          style:
-              OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
-        ),
-        const SizedBox(height: 18),
-        _OverallCard(report: report),
-        const SizedBox(height: 20),
-        Row(children: [
-          const Expanded(
-              child: Text('แยกตามประเภทยา',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800))),
-          Text('${report.drugs.length} ประเภท',
-              style: const TextStyle(color: Color(0xFF68778B)))
-        ]),
-        const SizedBox(height: 10),
-        if (report.drugs.isEmpty)
-          const Card(
-              child: Padding(
-                  padding: EdgeInsets.all(28),
-                  child: Center(child: Text('ยังไม่มีข้อมูลยาเพื่อคำนวณ')))),
-        ...report.drugs.map((item) => _DrugRateCard(item: item)),
-        const SizedBox(height: 8),
-        const Text(
-          'คำนวณจากจำนวนมื้อยาที่ควรทาน เทียบกับรายการที่กด “ทานแล้ว” ภายในช่วงเวลาที่เลือก',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 12, color: Color(0xFF8291A5)),
-        ),
-      ]),
+      backgroundColor: MeDisColors.background,
+      appBar: const MeDisAppBar('ความสม่ำเสมอในการทานยา'),
+      body: ListView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: MeDisSpace.pagePadding,
+          children: [
+            DropdownButtonFormField<AdherencePeriod>(
+              initialValue: period,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'รูปแบบรายงาน',
+                prefixIcon: Icon(Icons.bar_chart_outlined),
+              ),
+              items: const [
+                DropdownMenuItem(
+                    value: AdherencePeriod.day, child: Text('รายวัน')),
+                DropdownMenuItem(
+                    value: AdherencePeriod.week, child: Text('รายสัปดาห์')),
+                DropdownMenuItem(
+                    value: AdherencePeriod.month, child: Text('รายเดือน')),
+                DropdownMenuItem(
+                    value: AdherencePeriod.custom,
+                    child: Text('กำหนดช่วงวันที่')),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                if (value == AdherencePeriod.custom) {
+                  _selectRange();
+                } else {
+                  setState(() {
+                    period = value;
+                    rangeEnd = DateUtils.dateOnly(DateTime.now());
+                  });
+                }
+              },
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _selectRange,
+              icon: const Icon(Icons.date_range_outlined),
+              label: Text(
+                  'ตั้งแต่ ${_shortDate(report.start)} ถึง ${_shortDate(report.end)}'),
+              style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(50)),
+            ),
+            const SizedBox(height: 18),
+            _OverallCard(report: report),
+            const SizedBox(height: 20),
+            Row(children: [
+              const Expanded(
+                  child: Text('แยกตามประเภทยา',
+                      style: TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.w700))),
+              Text('${report.drugs.length} ประเภท',
+                  style: const TextStyle(color: MeDisColors.muted))
+            ]),
+            const SizedBox(height: 10),
+            if (report.drugs.isEmpty)
+              const MeDisEmptyState(
+                  icon: Icons.bar_chart_outlined,
+                  title: 'ยังไม่มีข้อมูลยาเพื่อคำนวณ',
+                  message: 'เริ่มบันทึกการทานยา แล้วกลับมาดูแนวโน้มที่นี่'),
+            ...report.drugs.map((item) => _DrugRateCard(item: item)),
+            const SizedBox(height: 8),
+            const Text(
+              'คำนวณจากจำนวนมื้อยาที่ควรทาน เทียบกับรายการที่กด “ทานแล้ว” ภายในช่วงเวลาที่เลือก',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: MeDisColors.subtle),
+            ),
+          ]),
     );
   }
 }
@@ -122,7 +132,7 @@ class _OverallCard extends StatelessWidget {
     final color = _rateColor(report.rate);
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: MeDisSpace.pagePadding,
         child: Row(children: [
           SizedBox.square(
             dimension: 112,
@@ -133,14 +143,14 @@ class _OverallCard extends StatelessWidget {
                       value: report.rate,
                       strokeWidth: 11,
                       strokeCap: StrokeCap.round,
-                      backgroundColor: const Color(0xFFE5EAF0),
+                      backgroundColor: MeDisColors.border,
                       color: color)),
               Column(mainAxisSize: MainAxisSize.min, children: [
                 Text('$percent%',
                     style: const TextStyle(
-                        fontSize: 25, fontWeight: FontWeight.w900)),
+                        fontSize: 25, fontWeight: FontWeight.w700)),
                 const Text('ภาพรวม',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF68778B)))
+                    style: TextStyle(fontSize: 12, color: MeDisColors.muted))
               ])
             ]),
           ),
@@ -151,14 +161,13 @@ class _OverallCard extends StatelessWidget {
                   children: [
                 const Text('ความสม่ำเสมอในการทานยา',
                     style:
-                        TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                        TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 7),
                 Text(_dateRange(report.start, report.end),
-                    style: const TextStyle(color: Color(0xFF68778B))),
+                    style: const TextStyle(color: MeDisColors.muted)),
                 const SizedBox(height: 13),
-                Row(children: [
+                Wrap(spacing: 20, runSpacing: 8, children: [
                   _Count(label: 'ทานแล้ว', value: report.taken),
-                  const SizedBox(width: 20),
                   _Count(label: 'ควรทาน', value: report.expected),
                 ])
               ]))
@@ -186,10 +195,10 @@ class _DrugRateCard extends StatelessWidget {
                 width: 45,
                 height: 45,
                 decoration: BoxDecoration(
-                    color: const Color(0xFFE8F0FC),
+                    color: MeDisColors.primarySoft,
                     borderRadius: BorderRadius.circular(13)),
                 child: const Icon(Icons.medication_outlined,
-                    color: Color(0xFF397BD9))),
+                    color: MeDisColors.primary)),
             const SizedBox(width: 12),
             Expanded(
                 child: Column(
@@ -197,13 +206,13 @@ class _DrugRateCard extends StatelessWidget {
                     children: [
                   Text(item.drug.name,
                       style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w800)),
+                          fontSize: 16, fontWeight: FontWeight.w700)),
                   Text('${item.taken} จาก ${item.expected} ครั้ง',
-                      style: const TextStyle(color: Color(0xFF68778B)))
+                      style: const TextStyle(color: MeDisColors.muted))
                 ])),
             Text('$percent%',
                 style: TextStyle(
-                    color: color, fontSize: 19, fontWeight: FontWeight.w900))
+                    color: color, fontSize: 19, fontWeight: FontWeight.w700))
           ]),
           const SizedBox(height: 13),
           ClipRRect(
@@ -211,7 +220,7 @@ class _DrugRateCard extends StatelessWidget {
               child: LinearProgressIndicator(
                   value: item.rate,
                   minHeight: 9,
-                  backgroundColor: const Color(0xFFE5EAF0),
+                  backgroundColor: MeDisColors.border,
                   color: color))
         ]),
       ),
@@ -227,16 +236,16 @@ class _Count extends StatelessWidget {
   Widget build(BuildContext context) =>
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('$value',
-            style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900)),
+            style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
         Text(label,
-            style: const TextStyle(fontSize: 12, color: Color(0xFF8291A5)))
+            style: const TextStyle(fontSize: 12, color: MeDisColors.subtle))
       ]);
 }
 
 Color _rateColor(double rate) {
-  if (rate >= .8) return const Color(0xFF55B97A);
-  if (rate >= .5) return const Color(0xFFF0A33A);
-  return const Color(0xFFE04B4B);
+  if (rate >= .8) return MeDisColors.success;
+  if (rate >= .5) return MeDisColors.warning;
+  return MeDisColors.error;
 }
 
 String _dateRange(DateTime start, DateTime end) =>

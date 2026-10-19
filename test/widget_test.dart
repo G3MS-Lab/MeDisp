@@ -39,6 +39,62 @@ void main() {
     expect(find.byIcon(Icons.warning_rounded), findsNWidgets(2));
   });
 
+  testWidgets('calendar cells render medication intake status', (tester) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day, 8);
+    final past = today.subtract(const Duration(days: 1));
+    final pastMissed = today.subtract(const Duration(days: 2));
+
+    final drug = Drug(
+      id: 'scheduled-drug',
+      name: 'ยาประจำ',
+      addedAt: pastMissed.subtract(const Duration(days: 1)),
+      instructions: const [
+        DoseInstruction(meal: MealType.breakfast, quantity: 1),
+        DoseInstruction(meal: MealType.dinner, quantity: 1),
+      ],
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ListView(
+          children: [
+            MeDisEventCalendar(
+              selectedDate: today,
+              drugs: [drug],
+              intakes: [
+                // Past day: complete (breakfast and dinner)
+                IntakeRecord(
+                    id: 'past-1',
+                    takenAt: past,
+                    meal: MealType.breakfast,
+                    doses: const []),
+                IntakeRecord(
+                    id: 'past-2',
+                    takenAt: past,
+                    meal: MealType.dinner,
+                    doses: const []),
+                // Today: partial (breakfast only)
+                IntakeRecord(
+                    id: 'today-1',
+                    takenAt: today,
+                    meal: MealType.breakfast,
+                    doses: const []),
+              ],
+              allergies: const [],
+              onDateSelected: (_) {},
+            ),
+          ],
+        ),
+      ),
+    ));
+
+    // Legend items
+    expect(find.text('ทานครบ'), findsWidgets);
+    expect(find.text('ทานบางส่วน'), findsWidgets);
+    expect(find.text('ไม่ได้ทาน'), findsWidgets);
+  });
+
   testWidgets('initializes an unauthenticated app after the first frame',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
@@ -67,7 +123,7 @@ void main() {
         controller: controller, child: MeDisApp(controller: controller)));
     await tester.pumpAndSettle();
 
-    expect(find.text('Daily Check List'), findsOneWidget);
+    expect(find.text('ยาวันนี้'), findsOneWidget);
     expect(find.textContaining('วันนี้ทานแล้ว'), findsOneWidget);
   });
 

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/medis_theme.dart';
+
 import '../domain/models.dart';
 import 'medication_verify_image.dart';
 import 'slide_to_confirm.dart';
@@ -33,18 +35,19 @@ class _MedicationChangeConfirmation extends StatelessWidget {
       content: SizedBox(
         width: 340,
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.lock_open_outlined,
-              size: 40, color: Color(0xFF397BD9)),
-          const SizedBox(height: 12),
+          Text('ช่องยา ${slot.number}',
+              style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: MeDisColors.primary)),
+          const SizedBox(height: 16),
           if (slot.drug != null) ...[
             MedicationVerifyImage(drug: slot.drug!),
             const SizedBox(height: 12),
           ],
-          Text(
-              editing
-                  ? '${slot.drug!.name} · ช่อง ${slot.number}'
-                  : 'เพิ่มยาในช่อง ${slot.number}',
-              textAlign: TextAlign.center),
+          if (!editing)
+            const Text('กรอกข้อมูลยาและตรวจสอบรูปฉลากก่อนบันทึก',
+                textAlign: TextAlign.center, style: TextStyle(fontSize: 18)),
           const SizedBox(height: 16),
           SlideToConfirm(
             sliderKey: const Key('medication-confirmation-slider'),

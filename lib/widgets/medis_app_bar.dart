@@ -6,16 +6,12 @@ class MeDisAppBar extends StatelessWidget implements PreferredSizeWidget {
   final List<Widget>? actions;
 
   @override
-  Size get preferredSize => const Size.fromHeight(76);
+  Size get preferredSize => const Size.fromHeight(64);
 
   @override
   Widget build(BuildContext context) => AppBar(
-        toolbarHeight: 76,
-        backgroundColor: const Color(0xFFAACBFA),
-        foregroundColor: Colors.white,
-        centerTitle: true,
         actions: actions,
         title: Text(title,
-            style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w600)),
+            maxLines: 2, style: Theme.of(context).textTheme.titleLarge),
       );
 }

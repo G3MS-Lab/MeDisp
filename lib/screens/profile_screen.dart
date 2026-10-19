@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../theme/medis_theme.dart';
+
 import '../application/app_scope.dart';
 import '../domain/models.dart';
+import '../widgets/medis_ui.dart';
 import 'profile_edit_screen.dart';
 import 'reminder_settings_screen.dart';
 
@@ -13,7 +16,7 @@ class ProfileScreen extends StatelessWidget {
     final controller = AppScope.of(context);
     final profile = controller.profile;
     return ColoredBox(
-      color: const Color(0xFFF4F7FC),
+      color: MeDisColors.background,
       child: CustomScrollView(slivers: [
         SliverToBoxAdapter(child: _ProfileHeader(profile: profile)),
         SliverPadding(
@@ -44,7 +47,7 @@ class ProfileScreen extends StatelessWidget {
                     profile.medicalConditions),
                 _InfoRow(Icons.warning_amber_rounded, 'ประวัติแพ้ยา',
                     profile.drugAllergies,
-                    valueColor: const Color(0xFFD83B3B)),
+                    valueColor: MeDisColors.error),
               ],
             ),
             _ProfileSection(
@@ -59,7 +62,7 @@ class ProfileScreen extends StatelessWidget {
                     profile.caregiverPhone),
                 _InfoRow(Icons.emergency_outlined, 'เบอร์ฉุกเฉิน',
                     profile.emergencyPhone,
-                    valueColor: const Color(0xFFD83B3B)),
+                    valueColor: MeDisColors.error),
               ],
             ),
             Card(
@@ -68,7 +71,7 @@ class ProfileScreen extends StatelessWidget {
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
                 leading: const _FeatureIcon(
-                    icon: Icons.alarm_rounded, color: Color(0xFF397BD9)),
+                    icon: Icons.alarm_rounded, color: MeDisColors.primary),
                 title: const Text('เวลาอาหารและการแจ้งเตือน',
                     style: TextStyle(fontWeight: FontWeight.w700)),
                 subtitle: const Text('ตั้งเวลาแจ้งเตือนสำหรับแต่ละมื้อ'),
@@ -81,10 +84,16 @@ class ProfileScreen extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
-              onPressed: controller.signOut,
+              onPressed: () async {
+                final confirmed = await confirmMeDisAction(context,
+                    title: 'ออกจากระบบ?',
+                    message: 'ข้อมูลที่บันทึกไว้จะยังอยู่ในบัญชีของคุณ',
+                    actionLabel: 'ออกจากระบบ');
+                if (confirmed) await controller.signOut();
+              },
               style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFFD83B3B),
-                  side: const BorderSide(color: Color(0x33D83B3B)),
+                  foregroundColor: MeDisColors.error,
+                  side: const BorderSide(color: MeDisColors.error),
                   minimumSize: const Size.fromHeight(50)),
               icon: const Icon(Icons.logout),
               label: const Text('ออกจากระบบ'),
@@ -102,39 +111,36 @@ class _ProfileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
-        decoration: const BoxDecoration(
-            gradient: LinearGradient(
-                colors: [Color(0xFF79AEEF), Color(0xFFB7D5FA)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight),
-            borderRadius: BorderRadius.vertical(bottom: Radius.circular(34))),
+        padding: MeDisSpace.pagePadding,
         child: Column(children: [
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            const Text('โปรไฟล์ผู้ป่วย',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800)),
-            IconButton.filledTonal(
-                tooltip: 'แก้ไขข้อมูล',
-                onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const ProfileEditScreen())),
-                icon: const Icon(Icons.edit_outlined))
-          ]),
-          const SizedBox(height: 20),
+          MeDisPageHeader(
+              title: 'โปรไฟล์',
+              subtitle: 'ข้อมูลของคุณและผู้ดูแล',
+              trailing: IconButton.outlined(
+                  tooltip: 'แก้ไขข้อมูลผู้ป่วย',
+                  onPressed: () async {
+                    final confirmed = await confirmMeDisAction(context,
+                        title: 'แก้ไขข้อมูลผู้ป่วย',
+                        message: 'สไลด์เพื่อเปิดฟอร์มแก้ไขข้อมูลของคุณ',
+                        actionLabel: 'เปิดฟอร์มแก้ไข');
+                    if (confirmed && context.mounted) {
+                      await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const ProfileEditScreen()));
+                    }
+                  },
+                  icon: const Icon(Icons.edit_outlined))),
           Row(children: [
             Container(
                 padding: const EdgeInsets.all(4),
                 decoration: const BoxDecoration(
                     shape: BoxShape.circle, color: Colors.white),
                 child: const CircleAvatar(
-                    radius: 43,
-                    backgroundColor: Color(0xFFEAF2FD),
+                    radius: 32,
+                    backgroundColor: MeDisColors.primarySoft,
                     child: Icon(Icons.person_rounded,
-                        size: 56, color: Color(0xFF397BD9)))),
+                        size: 38, color: MeDisColors.primary))),
             const SizedBox(width: 18),
             Expanded(
                 child: Column(
@@ -144,12 +150,12 @@ class _ProfileHeader extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 23,
-                          fontWeight: FontWeight.w800)),
+                          color: MeDisColors.text,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700)),
                   const SizedBox(height: 5),
                   Text(profile.email,
-                      style: const TextStyle(color: Color(0xEEFFFFFF))),
+                      style: const TextStyle(color: MeDisColors.muted)),
                 ]))
           ])
         ]),
@@ -164,26 +170,8 @@ class _ProfileSection extends StatelessWidget {
   final List<Widget> children;
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 17, 18, 8),
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Icon(icon, color: const Color(0xFF397BD9)),
-                const SizedBox(width: 9),
-                Text(title,
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w800))
-              ]),
-              const Divider(height: 24),
-              ...children,
-            ]),
-          ),
-        ),
-      );
+  Widget build(BuildContext context) =>
+      MeDisSection(title: title, icon: icon, children: children);
 }
 
 class _InfoRow extends StatelessWidget {
@@ -197,19 +185,23 @@ class _InfoRow extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.only(bottom: 14),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Icon(icon, size: 21, color: const Color(0xFF8291A5)),
+          Icon(icon, size: 21, color: MeDisColors.subtle),
           const SizedBox(width: 12),
-          SizedBox(
-              width: 104,
-              child: Text(label,
-                  style: const TextStyle(color: Color(0xFF68778B)))),
           Expanded(
-              child: Text(value.trim().isEmpty ? 'ยังไม่ได้ระบุ' : value,
-                  style: TextStyle(
-                      color: value.trim().isEmpty
-                          ? const Color(0xFFADB5C0)
-                          : valueColor ?? const Color(0xFF253246),
-                      fontWeight: FontWeight.w600)))
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(label,
+                    style: const TextStyle(
+                        color: MeDisColors.muted, fontSize: 13)),
+                const SizedBox(height: 2),
+                Text(value.trim().isEmpty ? 'ยังไม่ได้ระบุ' : value,
+                    style: TextStyle(
+                        color: value.trim().isEmpty
+                            ? MeDisColors.subtle
+                            : valueColor ?? MeDisColors.text,
+                        fontWeight: FontWeight.w500)),
+              ]))
         ]),
       );
 }

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../application/app_scope.dart';
-import '../domain/models.dart';
+import '../theme/medis_theme.dart';
+import '../widgets/medis_ui.dart';
 import 'all_drugs_screen.dart';
 import 'allergy_screen.dart';
 import 'dispenser_screen.dart';
@@ -14,144 +15,188 @@ class HubScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
-    final occupiedSlots =
-        controller.slots.where((slot) => !slot.isEmpty).toList();
-    final drugSlots = <String, DispenserSlot>{
-      for (final slot in occupiedSlots) slot.drug!.id: slot
-    }.values.toList();
-    final remainingPills =
-        occupiedSlots.fold<int>(0, (total, slot) => total + slot.remaining);
+    final slots = controller.slots.where((slot) => !slot.isEmpty).toList();
     final items = [
-      _Menu('ประวัติการทานยา', Icons.calendar_month_outlined,
-          const HistoryScreen()),
-      _Menu(
-          'จัดการยา', Icons.medical_services_outlined, const DispenserScreen()),
-      _Menu('ประวัติยาทั้งหมด', Icons.history_rounded, const AllDrugsScreen()),
-      _Menu('อาการไม่พึงประสงค์', Icons.health_and_safety_outlined,
-          const AllergyScreen()),
+      _Menu('จัดการยา', 'ดูช่องยา เติมยา และแก้ไขข้อมูล',
+          Icons.medication_outlined, const DispenserScreen()),
+      _Menu('ประวัติการทานยา', 'ปฏิทินและความสม่ำเสมอในการทานยา',
+          Icons.calendar_month_outlined, const HistoryScreen()),
+      _Menu('ประวัติยาทั้งหมด', 'รายการยาที่เคยบันทึกไว้',
+          Icons.inventory_2_outlined, const AllDrugsScreen()),
+      _Menu('อาการไม่พึงประสงค์', 'บันทึกและติดตามอาการหลังทานยา',
+          Icons.health_and_safety_outlined, const AllergyScreen()),
     ];
     return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 34, 24, 24),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: MeDisSpace.pagePadding,
       children: [
-        const Text('MeDis',
-            style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF313131))),
-        const SizedBox(height: 5),
-        Text(
-            controller.connected
-                ? 'เชื่อมต่อเครื่องจ่ายยาแล้ว'
-                : 'เครื่องจ่ายยายังไม่เชื่อมต่อ',
-            style: TextStyle(
-                color: controller.connected ? Colors.green : Colors.orange)),
-        if (controller.errorMessage != null) ...[
-          const SizedBox(height: 6),
-          Text(controller.errorMessage!,
-              style: const TextStyle(color: Colors.red, fontSize: 12)),
-        ],
+        const MeDisPageHeader(
+            title: 'MeDis', subtitle: 'ดูแลเรื่องยาได้ในที่เดียว'),
+        LayoutBuilder(builder: (context, constraints) {
+          final largeText = MediaQuery.textScalerOf(context).scale(20) > 26;
+          final columns = constraints.maxWidth < 280 || largeText ? 1 : 2;
+          final width = (constraints.maxWidth - 16 * (columns - 1)) / columns;
+          return Wrap(spacing: 16, runSpacing: 16, children: [
+            for (final item in items)
+              SizedBox(
+                  width: width,
+                  child: Semantics(
+                    button: true,
+                    label: '${item.title} ${item.subtitle}',
+                    excludeSemantics: true,
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => item.screen)),
+                    child: Material(
+                      color: MeDisColors.surface,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(MeDisRadius.card),
+                          side: const BorderSide(color: MeDisColors.border)),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: () => Navigator.push(context,
+                            MaterialPageRoute(builder: (_) => item.screen)),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minHeight: 176),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                      width: 72,
+                                      height: 72,
+                                      decoration: BoxDecoration(
+                                          color: MeDisColors.primarySoft,
+                                          borderRadius:
+                                              BorderRadius.circular(20)),
+                                      child: Icon(item.icon,
+                                          color: MeDisColors.primary,
+                                          size: 44)),
+                                  const SizedBox(height: 16),
+                                  Text(item.title,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.w700,
+                                          height: 1.5)),
+                                ]),
+                          ),
+                        ),
+                      ),
+                    ),
+                  )),
+          ]);
+        }),
         const SizedBox(height: 24),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: items.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 22,
-              crossAxisSpacing: 22,
-              childAspectRatio: 1),
-          itemBuilder: (_, i) => InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () => Navigator.push(
-                context, MaterialPageRoute(builder: (_) => items[i].screen)),
-            child: Ink(
-              decoration: BoxDecoration(
-                  color: const Color(0xFFE8F0FC),
-                  borderRadius: BorderRadius.circular(16)),
-              child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(items[i].icon,
-                        size: 58, color: const Color(0xFF397BD9)),
-                    const SizedBox(height: 14),
-                    Text(items[i].title,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF313131))),
-                  ]),
-            ),
-          ),
-        ),
-        const SizedBox(height: 22),
         Card(
-          clipBehavior: Clip.antiAlias,
-          child: ExpansionTile(
-            leading: Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                    color: const Color(0xFFE8F0FC),
-                    borderRadius: BorderRadius.circular(13)),
-                child: const Icon(Icons.medication_outlined,
-                    color: Color(0xFF397BD9))),
-            title: const Text('ยาในเครื่องตอนนี้',
-                style: TextStyle(fontWeight: FontWeight.w800)),
-            subtitle: Text(
-                '${drugSlots.length} ประเภท · เหลือรวม $remainingPills เม็ด'),
-            children: drugSlots.isEmpty
-                ? const [
-                    Padding(
-                        padding: EdgeInsets.fromLTRB(20, 8, 20, 22),
-                        child: Text('ยังไม่มียาในเครื่องจ่ายยา',
-                            style: TextStyle(color: Colors.grey)))
-                  ]
-                : drugSlots.map((slot) {
-                    final drug = slot.drug!;
-                    return ListTile(
-                      contentPadding:
-                          const EdgeInsets.symmetric(horizontal: 20),
-                      onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => DrugDetailScreen(drug: drug))),
-                      leading: CircleAvatar(
-                          backgroundColor: const Color(0xFFDFF6E5),
-                          child: Text('${slot.number}',
-                              style: const TextStyle(
-                                  color: Colors.green,
-                                  fontWeight: FontWeight.w800))),
-                      title: Text(drug.name,
-                          style: const TextStyle(fontWeight: FontWeight.w700)),
-                      subtitle: Text(
-                          'ช่อง ${slot.number} · เหลือ ${slot.remaining}/${slot.capacity} เม็ด\n${drug.instructions.map((dose) => '${dose.meal.label} ${dose.beforeFood ? 'ก่อนอาหาร' : 'หลังอาหาร'}').join(' · ')}'),
-                      isThreeLine: true,
-                      trailing: const Icon(Icons.chevron_right),
-                    );
-                  }).toList(),
-          ),
-        ),
-        const SizedBox(height: 18),
-        FilledButton.icon(
-          onPressed: controller.busy ? null : controller.toggleConnection,
-          icon: Icon(controller.connected
-              ? Icons.bluetooth_disabled
-              : Icons.bluetooth_connected),
-          label: Text(controller.busy
-              ? 'กำลังเชื่อมต่อ...'
-              : controller.connected
-                  ? 'ยกเลิกการเชื่อมต่อ'
-                  : 'เชื่อมต่อเครื่องจ่ายยา'),
-        ),
+            child: Padding(
+          padding: const EdgeInsets.all(16),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                      color: MeDisColors.primarySoft,
+                      borderRadius: BorderRadius.circular(12)),
+                  child:
+                      const Icon(Icons.bluetooth, color: MeDisColors.primary)),
+              const SizedBox(width: 12),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text(
+                        controller.connected
+                            ? 'เครื่องจ่ายยาพร้อมใช้งาน'
+                            : 'ยังไม่ได้เชื่อมต่อเครื่อง',
+                        style: Theme.of(context).textTheme.titleSmall),
+                    Text(
+                        controller.connected
+                            ? 'เชื่อมต่อ MeDispenser แล้ว'
+                            : 'เชื่อมต่อเพื่อเติมยาและรับยา',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: MeDisColors.muted)),
+                  ])),
+              if (controller.busy)
+                const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2)),
+            ]),
+            const SizedBox(height: 16),
+            SizedBox(
+                width: double.infinity,
+                child: controller.connected
+                    ? OutlinedButton.icon(
+                        onPressed: controller.busy
+                            ? null
+                            : controller.toggleConnection,
+                        icon: const Icon(Icons.bluetooth_connected, size: 20),
+                        label: const Text('ตัดการเชื่อมต่อ'))
+                    : FilledButton.icon(
+                        onPressed: controller.busy
+                            ? null
+                            : controller.toggleConnection,
+                        icon: const Icon(Icons.bluetooth, size: 20),
+                        label: Text(controller.busy
+                            ? 'กำลังเชื่อมต่อ...'
+                            : 'เชื่อมต่อเครื่องจ่ายยา'))),
+          ]),
+        )),
+        if (controller.errorMessage != null) ...[
+          const SizedBox(height: 12),
+          MeDisNotice(
+              message: controller.errorMessage!,
+              color: MeDisColors.error,
+              icon: Icons.error_outline),
+        ],
+        const SizedBox(height: 28),
+        Row(children: [
+          Expanded(
+              child: Text('ยาในเครื่อง',
+                  style: Theme.of(context).textTheme.titleMedium)),
+          Text('${slots.length}/${controller.slots.length} ช่อง',
+              style: const TextStyle(color: MeDisColors.muted)),
+        ]),
+        const SizedBox(height: 12),
+        if (slots.isEmpty)
+          const MeDisEmptyState(
+              icon: Icons.inventory_2_outlined,
+              title: 'ยังไม่มียาในเครื่อง',
+              message: 'เข้า “จัดการยา” แล้วแตะช่องว่างเพื่อเพิ่มยา')
+        else
+          Card(
+              child: Column(children: [
+            for (var i = 0; i < slots.length; i++) ...[
+              if (i > 0) const Divider(height: 1, indent: 64),
+              ListTile(
+                leading: CircleAvatar(
+                    backgroundColor: MeDisColors.primarySoft,
+                    child: Text('${slots[i].number}',
+                        style: const TextStyle(color: MeDisColors.primary))),
+                title: Text(slots[i].drug!.name),
+                subtitle: Text(
+                    'คงเหลือ ${slots[i].remaining} จาก ${slots[i].capacity} เม็ด'),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            DrugDetailScreen(drug: slots[i].drug!))),
+              ),
+            ],
+          ])),
       ],
     );
   }
 }
 
 class _Menu {
-  const _Menu(this.title, this.icon, this.screen);
+  const _Menu(this.title, this.subtitle, this.icon, this.screen);
   final String title;
+  final String subtitle;
   final IconData icon;
   final Widget screen;
 }

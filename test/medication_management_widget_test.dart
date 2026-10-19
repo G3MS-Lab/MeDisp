@@ -11,6 +11,7 @@ import 'package:medisp/screens/drug_detail_screen.dart';
 import 'package:medisp/screens/drug_form_screen.dart';
 import 'package:medisp/screens/medication_refill_screen.dart';
 import 'package:medisp/widgets/medication_verify_image.dart';
+import 'package:medisp/theme/medis_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<AppController> _mount(WidgetTester tester,
@@ -38,6 +39,7 @@ Future<AppController> _mount(WidgetTester tester,
   await tester.pumpWidget(AppScope(
       controller: controller,
       child: MaterialApp(
+        theme: MeDisTheme.light,
         builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context)
                 .copyWith(textScaler: TextScaler.linear(textScale)),

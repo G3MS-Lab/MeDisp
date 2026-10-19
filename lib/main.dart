@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'application/app_controller.dart';
 import 'application/app_scope.dart';
@@ -12,6 +13,8 @@ import 'screens/daily_screen.dart';
 import 'screens/hub_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/auth_screen.dart';
+import 'theme/medis_theme.dart';
+import 'widgets/medis_web_viewport.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -56,6 +59,9 @@ class _MeDisAppState extends State<MeDisApp> {
   Widget build(BuildContext context) => MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'MeDis',
+        locale: const Locale('th'),
+        supportedLocales: const [Locale('th'), Locale('en')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
         builder: (context, child) {
           final content = MediaQuery(
             data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
@@ -66,35 +72,9 @@ class _MeDisAppState extends State<MeDisApp> {
             return content;
           }
 
-          return ColoredBox(
-            color: const Color(0xFFE5E7EB),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 430),
-                child: ColoredBox(
-                  color: Colors.white,
-                  child: content,
-                ),
-              ),
-            ),
-          );
+          return MeDisWebViewport(child: child ?? const SizedBox.shrink());
         },
-        theme: ThemeData(
-          useMaterial3: true,
-          scaffoldBackgroundColor: Colors.white,
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6AA6FF)),
-          inputDecorationTheme: InputDecorationTheme(
-              border:
-                  OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-              filled: true,
-              fillColor: const Color(0xFFF8FAFD)),
-          cardTheme: CardThemeData(
-              color: Colors.white,
-              elevation: 5,
-              shadowColor: const Color(0x33001226),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16))),
-        ),
+        theme: MeDisTheme.light,
         home: const AuthGate(),
       );
 }
@@ -130,17 +110,21 @@ class _MeDisShellState extends State<MeDisShell> {
         bottomNavigationBar: NavigationBar(
           height: 76,
           selectedIndex: index,
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
-          indicatorColor: const Color(0xFF6AA6FF),
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
           onDestinationSelected: (value) => setState(() => index = value),
           destinations: const [
             NavigationDestination(
-                icon: Icon(Icons.grid_view_rounded), label: 'Menu'),
+                icon: Icon(Icons.grid_view_outlined),
+                selectedIcon: Icon(Icons.grid_view_rounded),
+                label: 'เมนู'),
             NavigationDestination(
-                icon: Icon(Icons.monitor_heart_outlined, color: Colors.white),
-                label: 'Today'),
+                icon: Icon(Icons.today_outlined),
+                selectedIcon: Icon(Icons.today_rounded),
+                label: 'วันนี้'),
             NavigationDestination(
-                icon: Icon(Icons.person_outline), label: 'Profile'),
+                icon: Icon(Icons.person_outline),
+                selectedIcon: Icon(Icons.person_rounded),
+                label: 'โปรไฟล์'),
           ],
         ),
       );

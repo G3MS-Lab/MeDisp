@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../theme/medis_theme.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -7,6 +9,9 @@ import '../data/local_image_store.dart';
 import '../domain/models.dart';
 import '../widgets/medis_app_bar.dart';
 import '../widgets/medis_event_calendar.dart';
+import '../widgets/medis_image_card.dart';
+import '../widgets/medis_ui.dart';
+import '../widgets/slide_to_confirm.dart';
 import 'allergy_detail_screen.dart';
 
 class AllergyScreen extends StatefulWidget {
@@ -24,44 +29,57 @@ class _AllergyScreenState extends State<AllergyScreen> {
         .where((record) => DateUtils.isSameDay(record.date, selected))
         .toList();
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FC),
+      backgroundColor: MeDisColors.background,
       appBar: const MeDisAppBar('อาการไม่พึงประสงค์'),
       floatingActionButton: FloatingActionButton.extended(
           onPressed: () => _showForm(context),
           icon: const Icon(Icons.add),
           label: const Text('เพิ่มอาการ')),
-      body: ListView(padding: const EdgeInsets.all(20), children: [
-        MeDisEventCalendar(
-            selectedDate: selected,
-            intakes: controller.intakeHistory,
-            allergies: controller.allergies,
-            showMedicationEvents: false,
-            onDateSelected: (date) => setState(() => selected = date)),
-        const SizedBox(height: 20),
-        Text(
-            'บันทึกวันที่ ${selected.day}/${selected.month}/${selected.year + 543}',
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-        if (records.isEmpty)
-          const Padding(
-              padding: EdgeInsets.all(22),
-              child: Center(child: Text('ไม่มีบันทึกอาการ'))),
-        ...records.map((record) => Card(
-            child: ListTile(
-                onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => AllergyDetailScreen(record: record))),
-                leading: const Icon(Icons.health_and_safety, color: Colors.red),
-                title: Text(record.description),
-                subtitle: Text(
-                    '${record.date.formatTime24Hour()} · ${record.symptoms.isEmpty ? 'ไม่ได้ระบุอาการ' : record.symptoms.join(' · ')}'),
-                trailing: const Icon(Icons.chevron_right)))),
-      ]),
+      body: ListView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 104),
+          children: [
+            MeDisEventCalendar(
+                selectedDate: selected,
+                intakes: controller.intakeHistory,
+                allergies: controller.allergies,
+                showMedicationEvents: false,
+                onDateSelected: (date) => setState(() => selected = date)),
+            const SizedBox(height: 20),
+            Text(
+                'บันทึกวันที่ ${selected.day}/${selected.month}/${selected.year + 543}',
+                style:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+            if (records.isEmpty)
+              const MeDisEmptyState(
+                  icon: Icons.health_and_safety_outlined,
+                  title: 'ไม่มีบันทึกอาการ',
+                  message: 'กด “เพิ่มอาการ” เพื่อบันทึกสิ่งที่สังเกตหลังทานยา'),
+            ...records.map((record) => Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                child: ListTile(
+                    onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) =>
+                                AllergyDetailScreen(record: record))),
+                    leading: const Icon(Icons.health_and_safety,
+                        color: MeDisColors.error),
+                    title: Text(record.description),
+                    subtitle: Text(
+                        '${record.date.formatTime24Hour()} · ${record.symptoms.isEmpty ? 'ไม่ได้ระบุอาการ' : record.symptoms.join(' · ')}'),
+                    trailing: const Icon(Icons.chevron_right)))),
+          ]),
     );
   }
 
   Future<void> _showForm(BuildContext context) async {
     final controller = AppScope.of(context);
+    final confirmed = await confirmMeDisAction(context,
+        title: 'เพิ่มบันทึกอาการ',
+        message: 'สไลด์เพื่อเปิดฟอร์มบันทึกอาการหลังทานยา',
+        actionLabel: 'เพิ่มข้อมูลอาการ');
+    if (!confirmed || !context.mounted) return;
     final draft = await showModalBottomSheet<_AllergyDraft>(
       context: context,
       isScrollControlled: true,
@@ -69,14 +87,25 @@ class _AllergyScreenState extends State<AllergyScreen> {
     );
     if (draft != null && mounted) {
       final now = DateTime.now();
-      await controller.addAllergy(AllergyRecord(
-          date: DateTime(selected.year, selected.month, selected.day, now.hour,
-              now.minute, now.second),
-          description: draft.description.isEmpty
-              ? 'อาการไม่พึงประสงค์'
-              : draft.description,
-          symptoms: draft.symptoms,
-          imagePath: draft.imagePath));
+      try {
+        await controller.addAllergy(AllergyRecord(
+            date: DateTime(selected.year, selected.month, selected.day,
+                now.hour, now.minute, now.second),
+            description: draft.description.isEmpty
+                ? 'อาการไม่พึงประสงค์'
+                : draft.description,
+            symptoms: draft.symptoms,
+            imagePath: draft.imagePath));
+        if (context.mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('บันทึกอาการแล้ว')));
+        }
+      } catch (error) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(error.toString().replaceFirst('Bad state: ', ''))));
+        }
+      }
     }
   }
 }
@@ -98,6 +127,8 @@ class _AllergyFormSheetState extends State<_AllergyFormSheet> {
   final description = TextEditingController();
   final symptoms = <String>{};
   String? imagePath;
+  String? symptomsError;
+  String? descriptionError;
 
   @override
   void dispose() {
@@ -148,6 +179,7 @@ class _AllergyFormSheetState extends State<_AllergyFormSheet> {
   @override
   Widget build(BuildContext context) => SafeArea(
         child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: EdgeInsets.fromLTRB(
               24, 22, 24, MediaQuery.viewInsetsOf(context).bottom + 24),
           child:
@@ -157,11 +189,11 @@ class _AllergyFormSheetState extends State<_AllergyFormSheet> {
                     width: 42,
                     height: 4,
                     decoration: BoxDecoration(
-                        color: Colors.black12,
+                        color: MeDisColors.border,
                         borderRadius: BorderRadius.circular(4)))),
             const SizedBox(height: 20),
             const Text('บันทึกอาการไม่พึงประสงค์',
-                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800)),
+                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700)),
             const SizedBox(height: 16),
             const Text('เลือกอาการ',
                 style: TextStyle(fontWeight: FontWeight.w700)),
@@ -179,18 +211,25 @@ class _AllergyFormSheetState extends State<_AllergyFormSheet> {
                     .map((item) => FilterChip(
                         label: Text(item.$2 ? '${item.$1} *' : item.$1),
                         selected: symptoms.contains(item.$1),
-                        onSelected: (value) => setState(() => value
-                            ? symptoms.add(item.$1)
-                            : symptoms.remove(item.$1))))
+                        onSelected: (value) => setState(() {
+                              value
+                                  ? symptoms.add(item.$1)
+                                  : symptoms.remove(item.$1);
+                              symptomsError = null;
+                            })))
                     .toList()),
+            if (symptomsError != null)
+              Text(symptomsError!,
+                  style:
+                      const TextStyle(color: MeDisColors.error, fontSize: 13)),
             const SizedBox(height: 6),
             Text(
               '* หมายถึง จำเป็นต้องระบุรายละเอียดเพิ่มเติม',
               style: TextStyle(
                 fontSize: 12,
                 color: (symptoms.contains('ผื่น') || symptoms.contains('อื่นๆ'))
-                    ? Colors.red.shade700
-                    : const Color(0xFF8291A5),
+                    ? MeDisColors.error
+                    : MeDisColors.subtle,
                 fontWeight:
                     (symptoms.contains('ผื่น') || symptoms.contains('อื่นๆ'))
                         ? FontWeight.w600
@@ -201,7 +240,9 @@ class _AllergyFormSheetState extends State<_AllergyFormSheet> {
             TextField(
                 controller: description,
                 maxLines: 3,
+                onChanged: (_) => setState(() => descriptionError = null),
                 decoration: InputDecoration(
+                    errorText: descriptionError,
                     labelText: (symptoms.contains('ผื่น') ||
                             symptoms.contains('อื่นๆ'))
                         ? 'รายละเอียดเพิ่มเติม * (จำเป็น)'
@@ -209,7 +250,7 @@ class _AllergyFormSheetState extends State<_AllergyFormSheet> {
                     labelStyle: TextStyle(
                       color: (symptoms.contains('ผื่น') ||
                               symptoms.contains('อื่นๆ'))
-                          ? Colors.red.shade700
+                          ? MeDisColors.error
                           : null,
                     ),
                     hintText: (symptoms.contains('ผื่น') ||
@@ -218,32 +259,25 @@ class _AllergyFormSheetState extends State<_AllergyFormSheet> {
                         : 'เช่น เกิดอาการหลังทานยาชนิดใดและนานเท่าไร',
                     prefixIcon: const Icon(Icons.notes_outlined))),
             const SizedBox(height: 12),
-            OutlinedButton.icon(
-                onPressed: pickImage,
-                icon: const Icon(Icons.add_a_photo_outlined),
-                label: Text(imagePath == null
-                    ? 'ถ่าย / อัปโหลดรูป (ถ้ามี)'
-                    : 'แนบรูปแล้ว'),
-                style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(50))),
+            MeDisImageCard(
+                title: 'รูปอาการ (ถ้ามี)',
+                description: 'แนบรูปเพื่อใช้ติดตามอาการในภายหลัง',
+                imagePath: imagePath,
+                onPickImage: pickImage),
             const SizedBox(height: 14),
-            FilledButton(
-                onPressed: () {
+            SlideToConfirm(
+                sliderKey: const Key('save-allergy-slider'),
+                onConfirmed: () {
                   if (symptoms.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text('กรุณาเลือกอาการอย่างน้อย 1 รายการ')));
+                    setState(
+                        () => symptomsError = 'เลือกอาการอย่างน้อย 1 รายการ');
                     return;
                   }
                   final needsDetails =
                       symptoms.contains('ผื่น') || symptoms.contains('อื่นๆ');
                   if (needsDetails && description.text.trim().isEmpty) {
-                    final missingItems = [
-                      if (symptoms.contains('ผื่น')) 'ผื่น',
-                      if (symptoms.contains('อื่นๆ')) 'อื่นๆ',
-                    ].join(' หรือ ');
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(
-                            'เมื่อเลือกอาการ $missingItems กรุณาระบุรายละเอียดเพิ่มเติม')));
+                    setState(() => descriptionError =
+                        'ระบุลักษณะอาการหรือตำแหน่งที่เกิดอาการ');
                     return;
                   }
                   Navigator.pop(
@@ -251,9 +285,7 @@ class _AllergyFormSheetState extends State<_AllergyFormSheet> {
                       _AllergyDraft(description.text.trim(), Set.of(symptoms),
                           imagePath));
                 },
-                style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(52)),
-                child: const Text('บันทึกอาการ')),
+                label: 'สไลด์เพื่อบันทึกอาการ'),
           ]),
         ),
       );
