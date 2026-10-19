@@ -32,8 +32,8 @@ class _DrugFormScreenState extends State<DrugFormScreen> {
 
   Future<void> pickLabelImage(ImageSource source) async {
     try {
-      final image =
-          await ImagePicker().pickImage(source: source, imageQuality: 85);
+      final image = await ImagePicker().pickImage(
+          source: source, maxWidth: 1600, maxHeight: 1600, imageQuality: 80);
       if (image != null && mounted) {
         final storedPath = await const LocalImageStore()
             .persist(image, category: 'drug_labels');
@@ -47,10 +47,12 @@ class _DrugFormScreenState extends State<DrugFormScreen> {
           content: Text(denied
               ? 'ไม่ได้รับอนุญาตให้เข้าถึงกล้องหรือรูปภาพ กรุณาเปิดสิทธิ์ใน Settings'
               : 'ไม่สามารถเปิดกล้องหรือรูปภาพได้: ${error.message ?? error.code}')));
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('ไม่สามารถแนบรูปภาพได้ กรุณาลองใหม่')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(error is StateError
+                ? error.message.toString()
+                : 'ไม่สามารถแนบรูปภาพได้ กรุณาลองใหม่')));
       }
     }
   }
@@ -66,8 +68,8 @@ class _DrugFormScreenState extends State<DrugFormScreen> {
   Future<void> save() async {
     if (!formKey.currentState!.validate()) return;
     if (!isPrn && doses.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('กรุณาเลือกอย่างน้อย 1 มื้อสำหรับยาประจำ')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('กรุณาเลือกอย่างน้อย 1 มื้อสำหรับยาประจำ')));
       return;
     }
     setState(() => saving = true);
@@ -216,9 +218,10 @@ class _DrugFormScreenState extends State<DrugFormScreen> {
                         hintText: 'เช่น ปวดศีรษะ, มีไข้, ปวดท้อง, คลื่นไส้',
                         prefixIcon: Icon(Icons.healing),
                       ),
-                      validator: (value) => isPrn && (value == null || value.trim().isEmpty)
-                          ? 'กรุณาระบุอาการที่ทาน'
-                          : null,
+                      validator: (value) =>
+                          isPrn && (value == null || value.trim().isEmpty)
+                              ? 'กรุณาระบุอาการที่ทาน'
+                              : null,
                     ),
                     const SizedBox(height: 14),
                     Container(
@@ -325,7 +328,8 @@ class _DrugFormScreenState extends State<DrugFormScreen> {
                           ),
                           if (doses.containsKey(meal))
                             Padding(
-                              padding: const EdgeInsets.only(left: 48, bottom: 8),
+                              padding:
+                                  const EdgeInsets.only(left: 48, bottom: 8),
                               child: SegmentedButton<bool>(
                                 segments: const [
                                   ButtonSegment(

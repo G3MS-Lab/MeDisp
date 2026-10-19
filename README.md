@@ -15,6 +15,8 @@ The app does not require Supabase, an API key, or an internet connection. Regist
 
 Medication, slot, intake, allergy, profile, and reminder records persist locally and are separated by the authenticated user's random account ID. Signing out keeps that user's records for the next valid sign-in.
 
+On the web, attachments are stored as binary images in IndexedDB; medication and slot records contain only a short image reference. Previously embedded Base64 images are migrated on startup after each image write commits, retaining the original records if migration fails. New image selections request a maximum size of 1600 × 1600 pixels and quality 80 (browser format support may vary). Native apps continue to store attachments in application support files.
+
 Because there is no server, accounts cannot roam between devices and there is no email-based password recovery. Uninstalling the app or clearing its storage may permanently remove local records. A production deployment containing medical data should additionally define an encrypted backup/export and device-loss policy.
 
 The current dispenser adapter stores slot state locally so the end-to-end workflow is functional offline:

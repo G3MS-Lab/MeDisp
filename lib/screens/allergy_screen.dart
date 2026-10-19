@@ -121,8 +121,8 @@ class _AllergyFormSheetState extends State<_AllergyFormSheet> {
             ])));
     if (source == null || !mounted) return;
     try {
-      final image =
-          await ImagePicker().pickImage(source: source, imageQuality: 85);
+      final image = await ImagePicker().pickImage(
+          source: source, maxWidth: 1600, maxHeight: 1600, imageQuality: 80);
       if (image == null) return;
       final storedPath =
           await const LocalImageStore().persist(image, category: 'allergies');
@@ -135,10 +135,12 @@ class _AllergyFormSheetState extends State<_AllergyFormSheet> {
           content: Text(denied
               ? 'ไม่ได้รับอนุญาตให้เข้าถึงกล้องหรือรูปภาพ กรุณาเปิดสิทธิ์ใน Settings'
               : 'ไม่สามารถเปิดกล้องหรือรูปภาพได้: ${error.message ?? error.code}')));
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('ไม่สามารถแนบรูปภาพได้ กรุณาลองใหม่')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(error is StateError
+                ? error.message.toString()
+                : 'ไม่สามารถแนบรูปภาพได้ กรุณาลองใหม่')));
       }
     }
   }
@@ -232,8 +234,8 @@ class _AllergyFormSheetState extends State<_AllergyFormSheet> {
                         content: Text('กรุณาเลือกอาการอย่างน้อย 1 รายการ')));
                     return;
                   }
-                  final needsDetails = symptoms.contains('ผื่น') ||
-                      symptoms.contains('อื่นๆ');
+                  final needsDetails =
+                      symptoms.contains('ผื่น') || symptoms.contains('อื่นๆ');
                   if (needsDetails && description.text.trim().isEmpty) {
                     final missingItems = [
                       if (symptoms.contains('ผื่น')) 'ผื่น',

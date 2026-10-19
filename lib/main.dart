@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'application/app_controller.dart';
 import 'application/app_scope.dart';
 import 'data/auth_repositories.dart';
+import 'data/local_image_store.dart';
 import 'data/persistent_dispenser_repository.dart';
 import 'data/persistent_medication_repository.dart';
 import 'domain/repositories.dart';
@@ -14,6 +15,7 @@ import 'screens/auth_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await const LocalImageStore().migrateLegacyImages();
   final authRepository = OfflineAuthRepository(SecureAuthStorage());
   await authRepository.initialize();
   final MedicationRepository medicationRepository =

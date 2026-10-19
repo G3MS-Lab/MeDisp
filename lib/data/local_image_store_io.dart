@@ -6,6 +6,8 @@ import 'package:path_provider/path_provider.dart';
 class LocalImageStore {
   const LocalImageStore();
 
+  Future<void> migrateLegacyImages() async {}
+
   Future<String> persist(XFile image, {required String category}) async {
     final root = await getApplicationSupportDirectory();
     final directory = Directory('${root.path}/attachments/$category');
