@@ -135,7 +135,7 @@ void main() {
 
   testWidgets('reminder settings save only after a full slide', (tester) async {
     final controller = await mount(tester, const ReminderSettingsScreen());
-    final field = find.byType(DropdownButtonFormField<int>).first;
+    final field = find.byKey(const Key('minutes-before-dropdown'));
     await tester.ensureVisible(field);
     await tester.tap(field);
     await tester.pumpAndSettle();

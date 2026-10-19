@@ -45,7 +45,7 @@ class IntakeDetailScreen extends StatelessWidget {
                       leading: const Icon(Icons.medication_outlined),
                       title: Text(dose.drug.name),
                       subtitle: Text(
-                          '${dose.quantity} เม็ด · ${record.isPrn ? "ทานเมื่อมีอาการ" : ((record.meal != null && (dose.drug.instructionFor(record.meal!)?.beforeFood ?? true)) ? 'ก่อนอาหาร' : 'หลังอาหาร')}'),
+                          '${dose.quantity} เม็ด · ${record.isPrn ? "ทานเมื่อมีอาการ" : record.meal == MealType.bedtime ? "ก่อนนอน" : ((record.meal != null && (dose.drug.instructionFor(record.meal!)?.beforeFood ?? true)) ? 'ก่อนอาหาร' : 'หลังอาหาร')}'),
                       trailing: const Icon(Icons.chevron_right),
                     ),
                   )),

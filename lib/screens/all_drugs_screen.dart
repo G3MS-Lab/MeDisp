@@ -52,8 +52,9 @@ class AllDrugsScreen extends StatelessWidget {
                             'ทานเมื่อมีอาการ (PRN)'
                           else
                             drug.instructions
-                                .map((dose) =>
-                                    '${dose.meal.label} ${dose.quantity} เม็ด ${dose.beforeFood ? 'ก่อนอาหาร' : 'หลังอาหาร'}')
+                                .map((dose) => dose.meal == MealType.bedtime
+                                    ? '${dose.meal.label} ${dose.quantity} เม็ด'
+                                    : '${dose.meal.label} ${dose.quantity} เม็ด ${dose.beforeFood ? 'ก่อนอาหาร' : 'หลังอาหาร'}')
                                 .join(' · '),
                           if (drug.stoppedAt != null)
                             'หยุดยาเมื่อ ${_date(drug.stoppedAt!)}'

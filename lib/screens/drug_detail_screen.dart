@@ -337,29 +337,35 @@ class _DoseRow extends StatelessWidget {
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                Text('มื้อ${instruction.meal.label}',
+                Text(
+                    instruction.meal == MealType.bedtime
+                        ? instruction.meal.label
+                        : 'มื้อ${instruction.meal.label}',
                     style: const TextStyle(
                         fontSize: 16, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 3),
                 Text('${instruction.quantity} เม็ดต่อครั้ง',
                     style: const TextStyle(color: MeDisColors.muted))
               ])),
-          Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                  color: Colors.white, borderRadius: BorderRadius.circular(20)),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(
-                    instruction.beforeFood
-                        ? Icons.restaurant_menu
-                        : Icons.restaurant,
-                    size: 15,
-                    color: MeDisColors.primary),
-                const SizedBox(width: 4),
-                Text(instruction.beforeFood ? 'ก่อนอาหาร' : 'หลังอาหาร',
-                    style: const TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w700))
-              ]))
+          if (instruction.meal != MealType.bedtime)
+            Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(
+                      instruction.beforeFood
+                          ? Icons.restaurant_menu
+                          : Icons.restaurant,
+                      size: 15,
+                      color: MeDisColors.primary),
+                  const SizedBox(width: 4),
+                  Text(instruction.beforeFood ? 'ก่อนอาหาร' : 'หลังอาหาร',
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w700))
+                ]))
         ]),
       );
 }

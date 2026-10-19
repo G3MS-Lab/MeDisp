@@ -19,10 +19,10 @@ extension MealTypeUi on MealType {
       };
 
   Color get color => switch (this) {
-        MealType.breakfast => const Color(0xFF63B1FF),
-        MealType.lunch => const Color(0xFFF4C542),
-        MealType.dinner => const Color(0xFFFF8A5B),
-        MealType.bedtime => const Color(0xFF284B8F),
+        MealType.breakfast => const Color(0xFFE89A20),
+        MealType.lunch => const Color(0xFFEF7A32),
+        MealType.dinner => const Color(0xFF7D6CC4),
+        MealType.bedtime => const Color(0xFF3E558F),
       };
 }
 
@@ -213,20 +213,41 @@ class PatientProfile {
 }
 
 class AlertSettings {
-  const AlertSettings(
-      {required this.mealTimes, this.minutesBefore = 15, this.repeatCount = 2});
+  const AlertSettings({
+    required this.mealTimes,
+    this.minutesBefore = 15,
+    this.repeatCount = 2,
+    this.beforeMealMinutes = 30,
+    this.afterMealMinutes = 30,
+  });
   final Map<MealType, TimeOfDay> mealTimes;
   final int minutesBefore;
   final int repeatCount;
+  final int beforeMealMinutes;
+  final int afterMealMinutes;
 
-  AlertSettings copyWith(
-          {Map<MealType, TimeOfDay>? mealTimes,
-          int? minutesBefore,
-          int? repeatCount}) =>
+  TimeOfDay timeForDose(MealType meal, {bool? beforeFood}) {
+    final base = mealTimes[meal] ?? const TimeOfDay(hour: 8, minute: 0);
+    if (meal == MealType.bedtime || beforeFood == null) return base;
+    final offset = beforeFood ? -beforeMealMinutes : afterMealMinutes;
+    final totalMinutes =
+        ((base.hour * 60 + base.minute + offset) % 1440 + 1440) % 1440;
+    return TimeOfDay(hour: totalMinutes ~/ 60, minute: totalMinutes % 60);
+  }
+
+  AlertSettings copyWith({
+    Map<MealType, TimeOfDay>? mealTimes,
+    int? minutesBefore,
+    int? repeatCount,
+    int? beforeMealMinutes,
+    int? afterMealMinutes,
+  }) =>
       AlertSettings(
         mealTimes: mealTimes ?? this.mealTimes,
         minutesBefore: minutesBefore ?? this.minutesBefore,
         repeatCount: repeatCount ?? this.repeatCount,
+        beforeMealMinutes: beforeMealMinutes ?? this.beforeMealMinutes,
+        afterMealMinutes: afterMealMinutes ?? this.afterMealMinutes,
       );
 }
 

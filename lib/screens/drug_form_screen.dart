@@ -408,7 +408,8 @@ class _DrugFormScreenState extends State<DrugFormScreen> {
                                       icon:
                                           const Icon(Icons.add_circle_outline)),
                                 ]),
-                              if (doses.containsKey(meal))
+                              if (doses.containsKey(meal) &&
+                                  meal != MealType.bedtime)
                                 Padding(
                                   padding: const EdgeInsets.only(bottom: 8),
                                   child: Wrap(

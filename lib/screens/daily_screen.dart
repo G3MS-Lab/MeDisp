@@ -9,9 +9,10 @@ import '../application/app_scope.dart';
 import '../domain/meal_schedule.dart';
 import '../domain/models.dart';
 import '../widgets/local_image.dart';
-import '../widgets/medis_ui.dart';
-import '../widgets/slide_to_confirm.dart';
 import '../widgets/medication_card.dart';
+import '../widgets/medis_ui.dart';
+import '../widgets/pill_character.dart';
+import '../widgets/slide_to_confirm.dart';
 import 'dispenser_screen.dart';
 import 'drug_detail_screen.dart';
 
@@ -31,16 +32,16 @@ class DailyScreen extends StatelessWidget {
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
             child: Column(
               children: [
                 const _TodayBanner(),
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
                 const _SlidingTabBar(),
               ],
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Expanded(
             child: TabBarView(
               children: [
@@ -65,37 +66,38 @@ class _TodayBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ClipRRect(
-        borderRadius: BorderRadius.circular(MeDisRadius.card),
+        borderRadius: BorderRadius.circular(18),
         child: Stack(children: [
           Positioned.fill(
               child: Image.asset('assets/images/daily_header.png',
                   fit: BoxFit.cover, excludeFromSemantics: true)),
           Padding(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(children: [
               Flexible(
-                  flex: 4,
+                  flex: 5,
                   child: Container(
-                    padding: const EdgeInsets.all(16),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: .96),
-                        borderRadius: BorderRadius.circular(MeDisRadius.input)),
+                        borderRadius: BorderRadius.circular(14)),
                     child: const Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text('ยาวันนี้',
                               style: TextStyle(
-                                  fontSize: 28,
+                                  fontSize: 20,
                                   fontWeight: FontWeight.w700,
                                   color: MeDisColors.text,
-                                  height: 1.4)),
-                          SizedBox(height: 4),
-                          Text('ทานยาตรงเวลา\nดูแลสุขภาพทุกวัน',
+                                  height: 1.2)),
+                          SizedBox(height: 2),
+                          Text('ทานยาตรงเวลา ดูแลสุขภาพทุกวัน',
                               style: TextStyle(
-                                  fontSize: 16,
+                                  fontSize: 13,
                                   color: MeDisColors.muted,
-                                  height: 1.5)),
+                                  height: 1.3)),
                         ]),
                   )),
               const Spacer(),
@@ -109,24 +111,24 @@ class _SlidingTabBar extends StatelessWidget {
   const _SlidingTabBar();
   @override
   Widget build(BuildContext context) => Container(
-        height: 64,
+        height: 48,
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
             color: MeDisColors.primarySoft,
-            borderRadius: BorderRadius.circular(MeDisRadius.card)),
+            borderRadius: BorderRadius.circular(18)),
         child: TabBar(
           indicatorSize: TabBarIndicatorSize.tab,
           dividerColor: Colors.transparent,
           labelPadding: const EdgeInsets.symmetric(horizontal: 4),
           indicator: BoxDecoration(
               color: MeDisColors.surface,
-              borderRadius: BorderRadius.circular(MeDisRadius.input)),
+              borderRadius: BorderRadius.circular(14)),
           labelColor: MeDisColors.primary,
           unselectedLabelColor: MeDisColors.muted,
           labelStyle:
-              const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
           unselectedLabelStyle:
-              const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           tabs: const [Tab(text: 'ยาตามมื้อ'), Tab(text: 'ตามอาการ')],
         ),
       );
@@ -224,7 +226,7 @@ List<ScheduledMealCardData> _buildMealCards(
         mealType: meal.type,
         beforeFood: true,
         doses: beforeFoodDoses,
-        time: meal.time,
+        time: controller.alertSettings.timeForDose(meal.type, beforeFood: true),
         isCompleted: isComp,
         isCurrent: meal.type == currentMeal?.type,
         buttonKeyName: 'receive-meal-${meal.type.name}',
@@ -238,7 +240,8 @@ List<ScheduledMealCardData> _buildMealCards(
         mealType: meal.type,
         beforeFood: false,
         doses: afterFoodDoses,
-        time: meal.time,
+        time:
+            controller.alertSettings.timeForDose(meal.type, beforeFood: false),
         isCompleted: isComp,
         isCurrent: meal.type == currentMeal?.type,
         buttonKeyName: beforeFoodDoses.isEmpty
@@ -306,60 +309,26 @@ class _ScheduledMealsTab extends StatelessWidget {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
           SizedBox(height: 12),
           _EmptyPlan(),
-          SizedBox(height: 12),
-          MeDisNotice(message: 'ใช้ยาตามคำแนะนำของแพทย์หรือเภสัชกร'),
         ],
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'วันนี้ทานแล้ว $completedCount จาก ${cards.length} มื้อ',
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: LinearProgressIndicator(
-                  minHeight: 6,
-                  value: cards.isEmpty ? 0.0 : completedCount / cards.length,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        Expanded(
-          child: _CurvedMealCarousel(
-            cards: cards,
-            initialIndex: initialIndex,
-            currentMealIndex: currentMealIndex,
-            onCompleteCard: (card) async {
-              try {
-                await controller.completeMeal(card.mealType, doses: card.doses);
-              } catch (error) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text(
-                          error.toString().replaceFirst('Bad state: ', ''))));
-                }
-              }
-            },
-          ),
-        ),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(20, 4, 20, 14),
-          child: MeDisNotice(message: 'ใช้ยาตามคำแนะนำของแพทย์หรือเภสัชกร'),
-        ),
-      ],
+    return _CurvedMealCarousel(
+      cards: cards,
+      completedCount: completedCount,
+      initialIndex: initialIndex,
+      currentMealIndex: currentMealIndex,
+      onCompleteCard: (card) async {
+        try {
+          await controller.completeMeal(card.mealType, doses: card.doses);
+        } catch (error) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content:
+                    Text(error.toString().replaceFirst('Bad state: ', ''))));
+          }
+        }
+      },
     );
   }
 }
@@ -367,12 +336,14 @@ class _ScheduledMealsTab extends StatelessWidget {
 class _CurvedMealCarousel extends StatefulWidget {
   const _CurvedMealCarousel({
     required this.cards,
+    required this.completedCount,
     required this.initialIndex,
     required this.currentMealIndex,
     required this.onCompleteCard,
   });
 
   final List<ScheduledMealCardData> cards;
+  final int completedCount;
   final int initialIndex;
   final int currentMealIndex;
   final Future<void> Function(ScheduledMealCardData card) onCompleteCard;
@@ -384,6 +355,7 @@ class _CurvedMealCarousel extends StatefulWidget {
 class _CurvedMealCarouselState extends State<_CurvedMealCarousel> {
   late PageController _pageController;
   late int _currentPage;
+  bool _hideCartoon = false;
 
   @override
   void initState() {
@@ -421,87 +393,232 @@ class _CurvedMealCarouselState extends State<_CurvedMealCarousel> {
     );
   }
 
+  void _handleVerticalSwipe(DragUpdateDetails details) {
+    if (details.primaryDelta == null) return;
+    if (details.primaryDelta! < -6 && !_hideCartoon) {
+      setState(() => _hideCartoon = true);
+    } else if (details.primaryDelta! > 6 && _hideCartoon) {
+      setState(() => _hideCartoon = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.cards.isEmpty) return const _EmptyPlan();
 
-    return Column(
-      children: [
-        Expanded(
-          child: PageView.builder(
-            key: const Key('curved-meal-carousel-pageview'),
-            controller: _pageController,
-            physics: const BouncingScrollPhysics(),
-            itemCount: widget.cards.length,
-            onPageChanged: (index) {
-              setState(() => _currentPage = index);
-            },
-            itemBuilder: (context, index) {
-              final card = widget.cards[index];
-              return AnimatedBuilder(
-                animation: _pageController,
-                builder: (context, child) {
-                  double diff = 0.0;
-                  if (_pageController.position.haveDimensions) {
-                    final page =
-                        _pageController.page ?? _currentPage.toDouble();
-                    diff = index - page;
-                  } else {
-                    diff = (index - _currentPage).toDouble();
-                  }
+    final activeCard = widget.cards[_currentPage];
 
-                  final absDiff = diff.abs().clamp(0.0, 2.0);
-                  // Curve physics: dips down in a smooth arc
-                  final dy = math.pow(absDiff, 1.8) * 32.0;
-                  // Rotation angle: tilts along tangent
-                  final rotation = diff * 0.055;
-                  // Scale and opacity
-                  final scale = (1.0 - absDiff * 0.08).clamp(0.85, 1.0);
-                  final opacity = (1.0 - absDiff * 0.35).clamp(0.4, 1.0);
+    return AnimatedBuilder(
+      animation: _pageController,
+      builder: (context, _) {
+        MealType? morphToMeal;
+        bool? morphToIsTaken;
+        double morphProgress = 0.0;
 
-                  return Transform.translate(
-                    offset: Offset(0.0, dy),
-                    child: Transform.rotate(
-                      angle: rotation,
-                      child: Transform.scale(
-                        scale: scale,
-                        child: Opacity(
-                          opacity: opacity,
-                          child: child,
+        if (_pageController.hasClients &&
+            _pageController.position.haveDimensions) {
+          final page = (_pageController.page ?? _currentPage.toDouble())
+              .clamp(0.0, (widget.cards.length - 1).toDouble());
+          final diff = page - _currentPage;
+          if (diff.abs() > 0.005) {
+            final targetIdx =
+                (diff > 0 ? _currentPage + 1 : _currentPage - 1)
+                    .clamp(0, widget.cards.length - 1);
+            morphToMeal = widget.cards[targetIdx].mealType;
+            morphToIsTaken = widget.cards[targetIdx].isCompleted;
+            morphProgress = diff.abs().clamp(0.0, 1.0);
+          }
+        }
+
+        final isNight = activeCard.mealType == MealType.dinner ||
+            activeCard.mealType == MealType.bedtime;
+        final sceneTextColor =
+            isNight ? Colors.white : const Color(0xFF2D3748);
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
+          child: PillSceneBackground(
+            key: const Key('full-screen-cartoon-scene-box'),
+            meal: activeCard.mealType,
+            isTaken: activeCard.isCompleted,
+            morphToMeal: morphToMeal,
+            morphToIsTaken: morphToIsTaken,
+            morphProgress: morphProgress,
+            borderRadius: 22.0,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'วันนี้ทานแล้ว ${widget.completedCount} จาก ${widget.cards.length} มื้อ',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: sceneTextColor,
                         ),
                       ),
-                    ),
-                  );
-                },
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                  child: _SingleMealCard(
-                    card: card,
-                    onComplete: () => widget.onCompleteCard(card),
+                      const SizedBox(height: 5),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: LinearProgressIndicator(
+                          minHeight: 5,
+                          backgroundColor: isNight
+                              ? Colors.white.withValues(alpha: 0.22)
+                              : Colors.black.withValues(alpha: 0.10),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(activeCard.color),
+                          value: widget.cards.isEmpty
+                              ? 0.0
+                              : widget.completedCount / widget.cards.length,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              );
-            },
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final cartoonHeight =
+                          (constraints.maxHeight * 0.35).clamp(105.0, 175.0);
+
+                      return Column(
+                        children: [
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 280),
+                            curve: Curves.easeOutCubic,
+                            height: _hideCartoon ? 0.0 : cartoonHeight,
+                            clipBehavior: Clip.hardEdge,
+                            decoration: const BoxDecoration(),
+                            child: SingleChildScrollView(
+                              physics: const NeverScrollableScrollPhysics(),
+                              child: PillCharacterWidget(
+                                key: const Key('active-meal-cartoon-stage'),
+                                meal: activeCard.mealType,
+                                isTaken: activeCard.isCompleted,
+                                height: cartoonHeight,
+                                showBackground: false,
+                                morphToMeal: morphToMeal,
+                                morphToIsTaken: morphToIsTaken,
+                                morphProgress: morphProgress,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Expanded(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.translucent,
+                              onVerticalDragUpdate: _handleVerticalSwipe,
+                              child: PageView.builder(
+                                key: const Key('curved-meal-carousel-pageview'),
+                                controller: _pageController,
+                                physics: const BouncingScrollPhysics(),
+                                itemCount: widget.cards.length,
+                                onPageChanged: (index) {
+                                  setState(() => _currentPage = index);
+                                },
+                                itemBuilder: (context, index) {
+                                  final card = widget.cards[index];
+                                  return AnimatedBuilder(
+                                    animation: _pageController,
+                                    builder: (context, child) {
+                                      double diff = 0.0;
+                                      if (_pageController.hasClients &&
+                                          _pageController
+                                              .position.haveDimensions) {
+                                        final page = _pageController.page ??
+                                            _currentPage.toDouble();
+                                        diff = index - page;
+                                      } else {
+                                        diff =
+                                            (index - _currentPage).toDouble();
+                                      }
+
+                                      final absDiff =
+                                          diff.abs().clamp(0.0, 2.0);
+                                      final dy = math.pow(absDiff, 1.8) * 26.0;
+                                      final rotation = diff * 0.055;
+                                      final scale = (1.0 - absDiff * 0.08)
+                                          .clamp(0.85, 1.0);
+                                      final opacity = (1.0 - absDiff * 0.35)
+                                          .clamp(0.45, 1.0);
+
+                                      return Transform.translate(
+                                        offset: Offset(0.0, dy),
+                                        child: Transform.rotate(
+                                          angle: rotation,
+                                          child: Transform.scale(
+                                            scale: scale,
+                                            child: Opacity(
+                                              opacity: opacity,
+                                              child: child,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 2),
+                                      child: _SingleMealCard(
+                                        card: card,
+                                        isCartoonHidden: _hideCartoon,
+                                        onToggleCartoon: () => setState(
+                                            () => _hideCartoon = !_hideCartoon),
+                                        onVerticalSwipe: _handleVerticalSwipe,
+                                        onComplete: () =>
+                                            widget.onCompleteCard(card),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 6),
+                _PageDots(
+                  count: widget.cards.length,
+                  currentIndex: _currentPage,
+                  activeColor: isNight ? Colors.white : activeCard.color,
+                  inactiveColor: isNight
+                      ? Colors.white.withValues(alpha: 0.35)
+                      : Colors.black.withValues(alpha: 0.20),
+                  onTap: _goToPage,
+                ),
+                if (widget.currentMealIndex != -1) ...[
+                  const SizedBox(height: 6),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                    child: Center(
+                      child: _JumpToCurrentMealButton(
+                        isAlreadyOnCurrent:
+                            _currentPage == widget.currentMealIndex,
+                        currentMealTitle:
+                            widget.cards[widget.currentMealIndex].title,
+                        accentColor:
+                            widget.cards[widget.currentMealIndex].color,
+                        isNight: isNight,
+                        onPressed: _currentPage == widget.currentMealIndex
+                            ? null
+                            : () => _goToPage(widget.currentMealIndex),
+                      ),
+                    ),
+                  ),
+                ] else
+                  const SizedBox(height: 10),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 6),
-        _PageDots(
-          count: widget.cards.length,
-          currentIndex: _currentPage,
-          onTap: _goToPage,
-        ),
-        if (widget.currentMealIndex != -1) ...[
-          const SizedBox(height: 4),
-          _JumpToCurrentMealButton(
-            isAlreadyOnCurrent: _currentPage == widget.currentMealIndex,
-            currentMealTitle: widget.cards[widget.currentMealIndex].title,
-            onPressed: _currentPage == widget.currentMealIndex
-                ? null
-                : () => _goToPage(widget.currentMealIndex),
-          ),
-        ],
-      ],
+        );
+      },
     );
   }
 }
@@ -510,49 +627,126 @@ class _JumpToCurrentMealButton extends StatelessWidget {
   const _JumpToCurrentMealButton({
     required this.isAlreadyOnCurrent,
     required this.currentMealTitle,
+    required this.accentColor,
+    required this.isNight,
     required this.onPressed,
   });
 
   final bool isAlreadyOnCurrent;
   final String currentMealTitle;
+  final Color accentColor;
+  final bool isNight;
   final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedOpacity(
-      duration: const Duration(milliseconds: 250),
-      opacity: isAlreadyOnCurrent ? 0.6 : 1.0,
-      child: TextButton.icon(
-        key: const Key('jump-to-current-meal-button'),
-        onPressed: onPressed,
-        style: TextButton.styleFrom(
-          visualDensity: VisualDensity.compact,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-          backgroundColor: isAlreadyOnCurrent
-              ? Colors.transparent
-              : MeDisColors.primary.withValues(alpha: 0.1),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(
-              color: isAlreadyOnCurrent
-                  ? MeDisColors.border.withValues(alpha: 0.5)
-                  : MeDisColors.primary.withValues(alpha: 0.35),
+    final pillBackground = isAlreadyOnCurrent
+        ? (isNight
+            ? Colors.white.withValues(alpha: 0.14)
+            : Colors.white.withValues(alpha: 0.78))
+        : Colors.white.withValues(alpha: 0.96);
+
+    final borderColor = isAlreadyOnCurrent
+        ? (isNight
+            ? Colors.white.withValues(alpha: 0.28)
+            : accentColor.withValues(alpha: 0.32))
+        : accentColor.withValues(alpha: 0.65);
+
+    final textColor = isAlreadyOnCurrent
+        ? (isNight ? Colors.white : MeDisColors.text)
+        : MeDisColors.text;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        color: pillBackground,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: borderColor,
+          width: isAlreadyOnCurrent ? 1.2 : 1.6,
+        ),
+        boxShadow: [
+          if (!isAlreadyOnCurrent)
+            BoxShadow(
+              color: accentColor.withValues(alpha: 0.30),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            )
+          else
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
             ),
-          ),
-        ),
-        icon: Icon(
-          Icons.my_location_rounded,
-          size: 16,
-          color: isAlreadyOnCurrent ? MeDisColors.muted : MeDisColors.primary,
-        ),
-        label: Text(
-          isAlreadyOnCurrent
-              ? 'มื้อปัจจุบัน ($currentMealTitle)'
-              : 'ไปที่มื้อปัจจุบัน ($currentMealTitle)',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: isAlreadyOnCurrent ? MeDisColors.muted : MeDisColors.primary,
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: const Key('jump-to-current-meal-button'),
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(999),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color.lerp(accentColor, Colors.white, 0.18)!,
+                        accentColor,
+                      ],
+                    ),
+                  ),
+                  child: Icon(
+                    isAlreadyOnCurrent
+                        ? Icons.check_rounded
+                        : Icons.near_me_rounded,
+                    size: 15,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    isAlreadyOnCurrent
+                        ? 'มื้อปัจจุบัน · $currentMealTitle'
+                        : 'กลับไปมื้อปัจจุบัน · $currentMealTitle',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: textColor,
+                    ),
+                  ),
+                ),
+                if (!isAlreadyOnCurrent) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: accentColor.withValues(alpha: 0.14),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 13,
+                      color: accentColor,
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
         ),
       ),
@@ -564,11 +758,15 @@ class _PageDots extends StatelessWidget {
   const _PageDots({
     required this.count,
     required this.currentIndex,
+    required this.activeColor,
+    required this.inactiveColor,
     required this.onTap,
   });
 
   final int count;
   final int currentIndex;
+  final Color activeColor;
+  final Color inactiveColor;
   final ValueChanged<int> onTap;
 
   @override
@@ -586,9 +784,7 @@ class _PageDots extends StatelessWidget {
             width: isSelected ? 22 : 7,
             height: 7,
             decoration: BoxDecoration(
-              color: isSelected
-                  ? MeDisColors.primary
-                  : MeDisColors.muted.withValues(alpha: 0.3),
+              color: isSelected ? activeColor : inactiveColor,
               borderRadius: BorderRadius.circular(4),
             ),
           ),
@@ -601,10 +797,16 @@ class _PageDots extends StatelessWidget {
 class _SingleMealCard extends StatefulWidget {
   const _SingleMealCard({
     required this.card,
+    required this.isCartoonHidden,
+    required this.onToggleCartoon,
+    required this.onVerticalSwipe,
     required this.onComplete,
   });
 
   final ScheduledMealCardData card;
+  final bool isCartoonHidden;
+  final VoidCallback onToggleCartoon;
+  final GestureDragUpdateCallback onVerticalSwipe;
   final Future<void> Function() onComplete;
 
   @override
@@ -619,26 +821,21 @@ class _SingleMealCardState extends State<_SingleMealCard> {
     final card = widget.card;
     final connected = AppScope.of(context).connected;
     final canReceive = !card.isCompleted && card.isCurrent && connected;
-    final cardBorderColor = card.isCurrent
-        ? card.color
-        : card.isCompleted
-            ? MeDisColors.success.withValues(alpha: 0.3)
-            : MeDisColors.border;
 
     return Container(
       decoration: BoxDecoration(
-        color: MeDisColors.surface,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: cardBorderColor,
-          width: card.isCurrent ? 2.2 : 1.0,
+          color: card.isCurrent ? card.color : MeDisColors.border,
+          width: card.isCurrent ? 2.5 : 1.0,
         ),
         boxShadow: [
           BoxShadow(
             color: card.isCurrent
                 ? card.color.withValues(alpha: 0.22)
                 : Colors.black.withValues(alpha: 0.06),
-            blurRadius: card.isCurrent ? 14 : 10,
+            blurRadius: card.isCurrent ? 14 : 8,
             offset: const Offset(0, 4),
           ),
         ],
@@ -647,199 +844,243 @@ class _SingleMealCardState extends State<_SingleMealCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-            decoration: BoxDecoration(
-              color: card.color.withValues(alpha: 0.1),
-              border: Border(
-                bottom: BorderSide(
-                  color: card.color.withValues(alpha: 0.2),
-                  width: 1,
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onVerticalDragUpdate: widget.onVerticalSwipe,
+            onTap: widget.onToggleCartoon,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+              decoration: BoxDecoration(
+                color: card.isCurrent
+                    ? card.color.withValues(alpha: 0.14)
+                    : MeDisColors.primarySoft.withValues(alpha: 0.55),
+                border: Border(
+                  bottom: BorderSide(
+                    color: card.isCurrent
+                        ? card.color.withValues(alpha: 0.25)
+                        : MeDisColors.border,
+                    width: 1,
+                  ),
                 ),
               ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: card.color.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(card.icon, color: card.color, size: 22),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        card.title,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: MeDisColors.text,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(99),
                       ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          const Icon(Icons.access_time_rounded,
-                              size: 14, color: MeDisColors.muted),
-                          const SizedBox(width: 4),
-                          Flexible(
-                            child: Text(
-                              '${card.time.format24Hour()} น. · ${card.totalPills} เม็ด (${card.doses.length} รายการ)',
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: card.color.withValues(alpha: 0.18),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(card.icon, color: card.color, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              card.title,
                               style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: MeDisColors.muted,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: MeDisColors.text,
                               ),
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 6),
-                if (card.isCompleted)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: MeDisColors.success.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.check_circle_rounded,
-                            size: 15, color: MeDisColors.success),
-                        SizedBox(width: 4),
-                        Text('ทานแล้ว',
-                            style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: MeDisColors.success)),
-                      ],
-                    ),
-                  )
-                else if (card.isCurrent)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: MeDisColors.primary.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.notifications_active_outlined,
-                            size: 15, color: MeDisColors.primary),
-                        SizedBox(width: 4),
-                        Text('มื้อนี้',
-                            style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: MeDisColors.primary)),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              itemCount: card.doses.length,
-              separatorBuilder: (_, __) => const Divider(height: 12),
-              itemBuilder: (context, idx) {
-                final dose = card.doses[idx];
-                return InkWell(
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => DrugDetailScreen(drug: dose.drug),
-                    ),
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-                    child: Row(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: SizedBox(
-                            width: 46,
-                            height: 46,
-                            child: dose.drug.labelImagePath == null
-                                ? Container(
-                                    color: MeDisColors.primarySoft,
-                                    child: const Icon(
-                                      Icons.medication_outlined,
-                                      color: MeDisColors.primary,
-                                      size: 24,
+                            const SizedBox(height: 2),
+                            Row(
+                              children: [
+                                Icon(Icons.access_time_rounded,
+                                    size: 14, color: card.color),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    '${card.time.format24Hour()} น. · ${card.totalPills} เม็ด (${card.doses.length} รายการ)',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: MeDisColors.muted,
                                     ),
-                                  )
-                                : localImage(
-                                    dose.drug.labelImagePath!,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => const Icon(
-                                        Icons.broken_image_outlined),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                          ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                      ),
+                      const SizedBox(width: 6),
+                      if (card.isCompleted)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: MeDisColors.success.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                dose.drug.name,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: MeDisColors.text,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'ครั้งละ ${dose.quantity} เม็ด',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: card.color,
-                                ),
-                              ),
+                              Icon(Icons.check_circle_rounded,
+                                  size: 15, color: MeDisColors.success),
+                              SizedBox(width: 4),
+                              Text('ทานแล้ว',
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: MeDisColors.success)),
+                            ],
+                          ),
+                        )
+                      else if (card.isCurrent)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: card.color.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.notifications_active_outlined,
+                                  size: 15, color: card.color),
+                              const SizedBox(width: 4),
+                              Text('มื้อนี้',
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: card.color)),
                             ],
                           ),
                         ),
-                        const Icon(Icons.chevron_right,
-                            color: MeDisColors.muted, size: 20),
-                      ],
-                    ),
+                    ],
                   ),
-                );
+                ],
+              ),
+            ),
+          ),
+          Expanded(
+            child: NotificationListener<ScrollUpdateNotification>(
+              onNotification: (notification) {
+                if (notification.scrollDelta != null) {
+                  if (notification.scrollDelta! > 5 && !widget.isCartoonHidden) {
+                    widget.onToggleCartoon();
+                  } else if (notification.scrollDelta! < -5 &&
+                      notification.metrics.pixels <= 0 &&
+                      widget.isCartoonHidden) {
+                    widget.onToggleCartoon();
+                  }
+                }
+                return false;
               },
+              child: ListView.separated(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                itemCount: card.doses.length,
+                separatorBuilder: (_, __) => const Divider(height: 10),
+                itemBuilder: (context, idx) {
+                  final dose = card.doses[idx];
+                  return InkWell(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => DrugDetailScreen(drug: dose.drug),
+                      ),
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 4, horizontal: 4),
+                      child: Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: SizedBox(
+                              width: 44,
+                              height: 44,
+                              child: dose.drug.labelImagePath == null
+                                  ? Container(
+                                      color: card.color.withValues(alpha: 0.14),
+                                      child: Icon(
+                                        Icons.medication_outlined,
+                                        color: card.color,
+                                        size: 24,
+                                      ),
+                                    )
+                                  : localImage(
+                                      dose.drug.labelImagePath!,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => const Icon(
+                                          Icons.broken_image_outlined),
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  dose.drug.name,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: MeDisColors.text,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'ครั้งละ ${dose.quantity} เม็ด',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: card.color,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.chevron_right,
+                              color: MeDisColors.muted, size: 20),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 6, 14, 14),
+            padding: const EdgeInsets.fromLTRB(14, 4, 14, 12),
             child: SizedBox(
               width: double.infinity,
-              height: 50,
+              height: 48,
               child: FilledButton.icon(
                 key: Key(card.buttonKeyName),
+                style: FilledButton.styleFrom(
+                  backgroundColor: card.color,
+                  foregroundColor: Colors.white,
+                ),
                 onPressed: (canReceive && !completing)
                     ? () async {
                         final confirmed =
@@ -970,32 +1211,227 @@ class _EmptyPlan extends StatelessWidget {
           label: const Text('จัดการยา')));
 }
 
-class _PrnTab extends StatelessWidget {
+class _PrnTab extends StatefulWidget {
   const _PrnTab({required this.prnSlots});
   final List<DispenserSlot> prnSlots;
 
   @override
+  State<_PrnTab> createState() => _PrnTabState();
+}
+
+class _PrnTabState extends State<_PrnTab> {
+  bool _hideCartoon = false;
+
+  void _handleVerticalSwipe(DragUpdateDetails details) {
+    if (details.primaryDelta == null) return;
+    if (details.primaryDelta! < -6 && !_hideCartoon) {
+      setState(() => _hideCartoon = true);
+    } else if (details.primaryDelta! > 6 && _hideCartoon) {
+      setState(() => _hideCartoon = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ListView(
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-      children: [
-        Row(children: [
-          Expanded(
-            child: Text(
-              'ยาตามอาการในตู้ (${prnSlots.length} รายการ)',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+    final prnSlots = widget.prnSlots;
+    final controller = AppScope.of(context);
+    final now = DateTime.now();
+    final anyPrnTakenToday = controller.intakeHistory
+        .any((r) => r.isPrn && DateUtils.isSameDay(r.takenAt, now));
+
+    int availableCount = 0;
+    for (final slot in prnSlots) {
+      final drug = slot.drug;
+      if (drug == null) continue;
+      final config = drug.prnConfig ??
+          const PrnConfig(
+              symptom: 'เมื่อมีอาการ',
+              quantity: 1,
+              minIntervalHours: 4,
+              maxDosesPerDay: 4);
+      final status = controller.checkPrnStatus(drug);
+      if (status.canTake && slot.remaining >= config.quantity) {
+        availableCount++;
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
+      child: PillSceneBackground(
+        key: const Key('prn-cartoon-scene-box'),
+        isPrn: true,
+        isTaken: anyPrnTakenToday,
+        borderRadius: 22.0,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'ยาตามอาการในตู้ (${prnSlots.length} รายการ)',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: MeDisColors.primaryDark,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      minHeight: 5,
+                      backgroundColor: Colors.black.withValues(alpha: 0.08),
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        MeDisColors.primary,
+                      ),
+                      value: prnSlots.isEmpty
+                          ? 0.0
+                          : availableCount / prnSlots.length,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ]),
-        const SizedBox(height: 12),
-        if (prnSlots.isEmpty) const _EmptyPrnPlan(),
-        ...prnSlots.map((slot) => _PrnDrugCard(
-              key: ValueKey(slot.number),
-              slot: slot,
-            )),
-        const MeDisNotice(message: 'ใช้ยาตามคำแนะนำของแพทย์หรือเภสัชกร'),
-      ],
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final cartoonHeight =
+                      (constraints.maxHeight * 0.25).clamp(95.0, 145.0);
+
+                  return Column(
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 280),
+                        curve: Curves.easeOutCubic,
+                        height: _hideCartoon ? 0.0 : cartoonHeight,
+                        clipBehavior: Clip.hardEdge,
+                        decoration: const BoxDecoration(),
+                        child: SingleChildScrollView(
+                          physics: const NeverScrollableScrollPhysics(),
+                          child: PillCharacterWidget(
+                            key: const Key('active-prn-cartoon-stage'),
+                            isPrn: true,
+                            isTaken: anyPrnTakenToday,
+                            height: cartoonHeight,
+                            showBackground: false,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 2, 12, 10),
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onVerticalDragUpdate: _handleVerticalSwipe,
+                            child: Container(
+                              key: const Key('prn-unified-card'),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.96),
+                                borderRadius: BorderRadius.circular(22),
+                                border: Border.all(
+                                  color: MeDisColors.border,
+                                  width: 1.0,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.06),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: Column(
+                                children: [
+                                  GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onVerticalDragUpdate: _handleVerticalSwipe,
+                                    onTap: () => setState(
+                                        () => _hideCartoon = !_hideCartoon),
+                                    child: Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.only(
+                                          top: 6, bottom: 2),
+                                      child: Center(
+                                        child: Container(
+                                          width: 36,
+                                          height: 4,
+                                          decoration: BoxDecoration(
+                                            color: Colors.black
+                                                .withValues(alpha: 0.15),
+                                            borderRadius:
+                                                BorderRadius.circular(99),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: prnSlots.isEmpty
+                                        ? ListView(
+                                            padding: const EdgeInsets.all(14),
+                                            children: const [
+                                              _EmptyPrnPlan(),
+                                            ],
+                                          )
+                                        : NotificationListener<
+                                            ScrollUpdateNotification>(
+                                            onNotification: (notification) {
+                                              if (notification.scrollDelta !=
+                                                  null) {
+                                                if (notification.scrollDelta! >
+                                                        5 &&
+                                                    !_hideCartoon) {
+                                                  setState(() =>
+                                                      _hideCartoon = true);
+                                                } else if (notification
+                                                            .scrollDelta! <
+                                                        -5 &&
+                                                    notification
+                                                            .metrics.pixels <=
+                                                        0 &&
+                                                    _hideCartoon) {
+                                                  setState(() =>
+                                                      _hideCartoon = false);
+                                                }
+                                              }
+                                              return false;
+                                            },
+                                            child: ListView.builder(
+                                              key: const Key(
+                                                  'prn-card-drug-list'),
+                                              padding:
+                                                  const EdgeInsets.fromLTRB(
+                                                      12, 4, 12, 4),
+                                              itemCount: prnSlots.length,
+                                              itemBuilder: (context, index) {
+                                                final slot = prnSlots[index];
+                                                return _PrnDrugCard(
+                                                  key: ValueKey(slot.number),
+                                                  slot: slot,
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1046,29 +1482,30 @@ class _PrnDrugCardState extends State<_PrnDrugCard> {
         : !status.canTake
             ? status.reason
             : 'พร้อมรับยาเมื่อมีอาการ';
+
     return MeDisMedicationCard(
       title: drug.name,
       subtitle: 'ช่อง ${slot.number} · คงเหลือ ${slot.remaining} เม็ด',
       icon: Icons.healing_outlined,
       expanded: expanded,
-      highlighted: available && controller.connected,
+      highlighted: false,
       onToggle: () => setState(() => expanded = !expanded),
       status: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Icon(available ? Icons.check_circle_outline : Icons.access_time,
             color: available ? MeDisColors.success : MeDisColors.warning,
-            size: 22),
+            size: 20),
         const SizedBox(width: 8),
         Expanded(
             child: Text(statusText,
                 style: TextStyle(
-                    fontSize: 16,
+                    fontSize: 15,
                     color:
                         available ? MeDisColors.success : MeDisColors.warning,
-                    height: 1.5))),
+                    height: 1.4))),
       ]),
       children: [
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
               color: MeDisColors.primarySoft,
               borderRadius: BorderRadius.circular(MeDisRadius.input)),
@@ -1076,39 +1513,43 @@ class _PrnDrugCardState extends State<_PrnDrugCard> {
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('ครั้งละ ${config.quantity} เม็ด',
                 style: const TextStyle(
-                    fontSize: 22,
+                    fontSize: 19,
                     fontWeight: FontWeight.w700,
                     color: MeDisColors.text)),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             Text(
                 config.symptom.isEmpty
                     ? 'ทานเมื่อมีอาการ'
                     : 'เมื่อ${config.symptom}',
-                style: const TextStyle(fontSize: 18, height: 1.5)),
-            const Divider(height: 24),
+                style: const TextStyle(fontSize: 16, height: 1.4)),
+            const Divider(height: 16),
             _PrnInstruction(
                 icon: Icons.timer_outlined,
                 text: 'เว้นอย่างน้อย ${config.minIntervalHours} ชั่วโมง'),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             _PrnInstruction(
                 icon: Icons.event_available_outlined,
                 text: 'ไม่เกิน ${config.maxDosesPerDay} ครั้งต่อวัน'),
           ]),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
         Align(
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+              ),
               onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(
                       builder: (_) => DrugDetailScreen(drug: drug))),
-              icon: const Icon(Icons.info_outline, size: 24),
-              label: const Text('ดูข้อมูลยา', style: TextStyle(fontSize: 18)),
+              icon: const Icon(Icons.info_outline, size: 22),
+              label: const Text('ดูข้อมูลยา', style: TextStyle(fontSize: 16)),
             )),
+        const SizedBox(height: 4),
         SizedBox(
           width: double.infinity,
-          height: 52,
+          height: 48,
           child: FilledButton.icon(
             key: Key('receive-prn-${slot.number}'),
             onPressed: (controller.connected && !dispensing && available)
@@ -1170,11 +1611,11 @@ class _PrnInstruction extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Icon(icon, size: 24, color: MeDisColors.primary),
-        const SizedBox(width: 10),
+        Icon(icon, size: 22, color: MeDisColors.primary),
+        const SizedBox(width: 8),
         Expanded(
             child:
-                Text(text, style: const TextStyle(fontSize: 16, height: 1.5))),
+                Text(text, style: const TextStyle(fontSize: 15, height: 1.4))),
       ]);
 }
 

@@ -8,6 +8,7 @@ import 'package:medisp/data/persistent_medication_repository.dart';
 import 'package:medisp/domain/models.dart';
 import 'package:medisp/screens/daily_screen.dart';
 import 'package:medisp/theme/medis_theme.dart';
+import 'package:medisp/widgets/pill_character.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/slide_gesture.dart';
@@ -108,19 +109,40 @@ void main() {
     expect(find.text('เย็น · ก่อนอาหาร'), findsOneWidget);
     expect(find.text('ยาเย็นก่อนอาหาร'), findsOneWidget);
 
+    // Verify cartoon character is displayed directly above the active meal card
+    expect(find.byType(PillCharacterWidget), findsOneWidget);
+    final initialCharacter =
+        tester.widget<PillCharacterWidget>(find.byType(PillCharacterWidget));
+    expect(initialCharacter.meal, MealType.dinner);
+    expect(initialCharacter.isTaken, isFalse);
+
     // Verify current meal card border has dinner color (0xFFFF8A5B)
-    final cardContainer = tester.widgetList<Container>(find.ancestor(
-      of: find.text('เย็น · ก่อนอาหาร'),
-      matching: find.byType(Container),
-    )).firstWhere((c) =>
-        c.decoration is BoxDecoration &&
-        (c.decoration as BoxDecoration).border?.isUniform == true);
+    final cardFinder = find
+        .ancestor(
+          of: find.text('เย็น · ก่อนอาหาร'),
+          matching: find.byType(Container),
+        )
+        .first;
+    final cartoonBottom =
+        tester.getBottomLeft(find.byType(PillCharacterWidget)).dy;
+    final cardTop = tester.getTopLeft(cardFinder).dy;
+    expect(cartoonBottom, lessThanOrEqualTo(cardTop));
+
+    final cardContainer = tester
+        .widgetList<Container>(find.ancestor(
+          of: find.text('เย็น · ก่อนอาหาร'),
+          matching: find.byType(Container),
+        ))
+        .firstWhere((c) =>
+            c.decoration is BoxDecoration &&
+            (c.decoration as BoxDecoration).border?.isUniform == true);
     final border = (cardContainer.decoration as BoxDecoration).border as Border;
     expect(border.top.color, MealType.dinner.color);
 
     // Swipe left to bedtime card
     await tester.drag(
-        find.byKey(const Key('curved-meal-carousel-pageview')), const Offset(-300, 0));
+        find.byKey(const Key('curved-meal-carousel-pageview')),
+        const Offset(-300, 0));
     await tester.pumpAndSettle();
 
     // Bedtime must show ONLY 'ก่อนนอน' (no before or after food)
@@ -128,6 +150,12 @@ void main() {
     expect(find.text('ก่อนนอน · ก่อนอาหาร'), findsNothing);
     expect(find.text('ก่อนนอน · หลังอาหาร'), findsNothing);
     expect(find.text('ยาก่อนนอน'), findsOneWidget);
+
+    // Active cartoon character updates to bedtime
+    final bedtimeCharacter =
+        tester.widget<PillCharacterWidget>(find.byType(PillCharacterWidget));
+    expect(bedtimeCharacter.meal, MealType.bedtime);
+    expect(bedtimeCharacter.isTaken, isFalse);
 
     // Jump button is active to return to current meal
     const jumpButton = Key('jump-to-current-meal-button');
@@ -140,11 +168,15 @@ void main() {
 
     // Swipe right (Offset > 0) to navigate to previous card: 'เช้า · หลังอาหาร'
     await tester.drag(
-        find.byKey(const Key('curved-meal-carousel-pageview')), const Offset(300, 0));
+        find.byKey(const Key('curved-meal-carousel-pageview')),
+        const Offset(300, 0));
     await tester.pumpAndSettle();
 
     expect(find.text('เช้า · หลังอาหาร'), findsOneWidget);
     expect(find.text('ยาเช้าหลังอาหาร'), findsOneWidget);
+    final breakfastCharacter =
+        tester.widget<PillCharacterWidget>(find.byType(PillCharacterWidget));
+    expect(breakfastCharacter.meal, MealType.breakfast);
 
     // Jump back to current meal via button again
     await tester.tap(find.byKey(jumpButton));
@@ -163,9 +195,86 @@ void main() {
     await slideControl(tester, const Key('confirm-intake-slider'));
     await tester.pumpAndSettle();
 
-    // Dinner before food should now be marked as completed
+    // Dinner before food should now be marked as completed and cartoon becomes happy (isTaken: true)
     expect(find.textContaining('วันนี้ทานแล้ว 1 จาก 4 มื้อ'), findsOneWidget);
-    expect(
-        tester.widget<FilledButton>(find.byKey(receiveDinner)).onPressed, isNull);
+    expect(tester.widget<FilledButton>(find.byKey(receiveDinner)).onPressed,
+        isNull);
+    final completedCharacter =
+        tester.widget<PillCharacterWidget>(find.byType(PillCharacterWidget));
+    expect(completedCharacter.meal, MealType.dinner);
+    expect(completedCharacter.isTaken, isTrue);
+
+    // Warning notice should be removed
+    expect(find.text('ใช้ยาตามคำแนะนำของแพทย์หรือเภสัชกร'), findsNothing);
+  });
+
+  testWidgets(
+      'PillCharacterWidget animates and renders palettes for all MealType, PRN green character, and taken states',
+      (tester) async {
+    for (final meal in MealType.values) {
+      for (final isTaken in [false, true]) {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: PillCharacterWidget(
+                  meal: meal,
+                  isTaken: isTaken,
+                  animate: true,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(tester.takeException(), isNull);
+        expect(find.byType(PillCharacterWidget), findsOneWidget);
+      }
+    }
+
+    // Verify PRN green character in idle & taken states
+    for (final isTaken in [false, true]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PillSceneBackground(
+              isPrn: true,
+              isTaken: isTaken,
+              child: Center(
+                child: PillCharacterWidget(
+                  isPrn: true,
+                  isTaken: isTaken,
+                  animate: true,
+                  showBackground: false,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(tester.takeException(), isNull);
+    }
+
+    // Verify morphing between two meals
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: PillCharacterWidget(
+              meal: MealType.breakfast,
+              isTaken: false,
+              morphToMeal: MealType.lunch,
+              morphToIsTaken: false,
+              morphProgress: 0.5,
+              animate: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(tester.takeException(), isNull);
   });
 }

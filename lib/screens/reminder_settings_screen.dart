@@ -17,6 +17,8 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen> {
   late Map<MealType, TimeOfDay> times;
   late int minutesBefore;
   late int repeats;
+  late int beforeMealMinutes;
+  late int afterMealMinutes;
   bool initialized = false;
   bool saving = false;
 
@@ -28,6 +30,8 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen> {
       times = Map.of(settings.mealTimes);
       minutesBefore = settings.minutesBefore;
       repeats = settings.repeatCount;
+      beforeMealMinutes = settings.beforeMealMinutes;
+      afterMealMinutes = settings.afterMealMinutes;
       initialized = true;
     }
   }
@@ -51,7 +55,7 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen> {
                               color: MeDisColors.primary),
                           SizedBox(width: 9),
                           Expanded(
-                              child: Text('เวลาทานอาหาร',
+                              child: Text('เวลาทานอาหารและก่อนนอน',
                                   style: TextStyle(
                                       fontSize: 17,
                                       fontWeight: FontWeight.w700)))
@@ -62,9 +66,15 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen> {
                               leading: CircleAvatar(
                                   backgroundColor:
                                       meal.color.withValues(alpha: .15),
-                                  child:
-                                      Icon(Icons.schedule, color: meal.color)),
-                              title: Text('มื้อ${meal.label}',
+                                  child: Icon(
+                                      meal == MealType.bedtime
+                                          ? Icons.bedtime_outlined
+                                          : Icons.schedule,
+                                      color: meal.color)),
+                              title: Text(
+                                  meal == MealType.bedtime
+                                      ? meal.label
+                                      : 'มื้อ${meal.label}',
                                   style: const TextStyle(
                                       fontWeight: FontWeight.w700)),
                               subtitle: Text(times[meal]!.format24Hour(),
@@ -98,6 +108,58 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Row(children: [
+                          Icon(Icons.medication_liquid_outlined,
+                              color: MeDisColors.primary),
+                          SizedBox(width: 9),
+                          Expanded(
+                              child: Text('ระยะเวลาทานยาก่อนและหลังอาหาร',
+                                  style: TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w700)))
+                        ]),
+                        const SizedBox(height: 18),
+                        DropdownButtonFormField<int>(
+                            key: const Key('before-meal-minutes-dropdown'),
+                            initialValue: beforeMealMinutes,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                                labelText: 'ทานยาก่อนอาหาร',
+                                prefixIcon: Icon(Icons.restaurant_menu)),
+                            items: [15, 30, 45, 60]
+                                .map((value) => DropdownMenuItem(
+                                    value: value,
+                                    child: Text('ก่อนอาหาร $value นาที')))
+                                .toList(),
+                            onChanged: (value) =>
+                                setState(() => beforeMealMinutes = value!)),
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<int>(
+                            key: const Key('after-meal-minutes-dropdown'),
+                            initialValue: afterMealMinutes,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                                labelText: 'ทานยาหลังอาหาร',
+                                prefixIcon: Icon(Icons.restaurant)),
+                            items: [0, 15, 30, 45, 60]
+                                .map((value) => DropdownMenuItem(
+                                    value: value,
+                                    child: Text(value == 0
+                                        ? 'หลังอาหารทันที'
+                                        : 'หลังอาหาร $value นาที')))
+                                .toList(),
+                            onChanged: (value) =>
+                                setState(() => afterMealMinutes = value!)),
+                      ]),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(children: [
                           Icon(Icons.notifications_active_outlined,
                               color: MeDisColors.primary),
                           SizedBox(width: 9),
@@ -109,6 +171,7 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen> {
                         ]),
                         const SizedBox(height: 18),
                         DropdownButtonFormField<int>(
+                            key: const Key('minutes-before-dropdown'),
                             initialValue: minutesBefore,
                             isExpanded: true,
                             decoration: const InputDecoration(
@@ -122,6 +185,7 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen> {
                                 setState(() => minutesBefore = value!)),
                         const SizedBox(height: 16),
                         DropdownButtonFormField<int>(
+                            key: const Key('repeat-count-dropdown'),
                             initialValue: repeats,
                             isExpanded: true,
                             decoration: const InputDecoration(
@@ -146,7 +210,9 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen> {
                     await AppScope.of(context).updateAlerts(AlertSettings(
                         mealTimes: times,
                         minutesBefore: minutesBefore,
-                        repeatCount: repeats));
+                        repeatCount: repeats,
+                        beforeMealMinutes: beforeMealMinutes,
+                        afterMealMinutes: afterMealMinutes));
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                           content: Text('บันทึกการแจ้งเตือนแล้ว')));

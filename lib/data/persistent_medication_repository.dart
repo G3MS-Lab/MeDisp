@@ -221,6 +221,8 @@ class PersistentMedicationRepository implements MedicationRepository {
       },
       minutesBefore: json['minutes_before'] as int,
       repeatCount: json['repeat_count'] as int,
+      beforeMealMinutes: (json['before_meal_minutes'] as int?) ?? 30,
+      afterMealMinutes: (json['after_meal_minutes'] as int?) ?? 30,
     );
   }
 
@@ -242,7 +244,9 @@ class PersistentMedicationRepository implements MedicationRepository {
               entry.key.name: _timeJson(entry.value)
           },
           'minutes_before': settings.minutesBefore,
-          'repeat_count': settings.repeatCount
+          'repeat_count': settings.repeatCount,
+          'before_meal_minutes': settings.beforeMealMinutes,
+          'after_meal_minutes': settings.afterMealMinutes,
         }));
   }
 }
