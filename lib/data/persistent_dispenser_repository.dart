@@ -5,21 +5,31 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../domain/models.dart';
 import '../domain/repositories.dart';
 
+import 'ble_dispenser_service.dart';
+
 class PersistentDispenserRepository implements DispenserRepository {
-  PersistentDispenserRepository(this._auth);
+  PersistentDispenserRepository(this._auth, [BleDispenserService? ble])
+      : _ble = ble ?? BleDispenserService.instance;
+
   final AuthRepository _auth;
-  bool _connected = false;
+  final BleDispenserService _ble;
+  bool _mockConnected = false;
+
+  bool get _connected => _mockConnected || _ble.isConnected;
 
   String get _key => 'dispenser_slots_${_auth.currentUser?.id ?? 'anonymous'}';
 
   @override
   Future<bool> connect() async {
-    await Future<void>.delayed(const Duration(milliseconds: 350));
-    return _connected = true;
+    if (_ble.isConnected) return true;
+    return _mockConnected = true;
   }
 
   @override
-  Future<void> disconnect() async => _connected = false;
+  Future<void> disconnect() async {
+    _mockConnected = false;
+    await _ble.disconnect();
+  }
 
   @override
   Future<List<DispenserSlot>> slots() async {
@@ -75,9 +85,42 @@ class PersistentDispenserRepository implements DispenserRepository {
     await _save(values);
   }
 
-  Future<void> _save(List<DispenserSlot> values) async =>
-      (await SharedPreferences.getInstance())
-          .setString(_key, jsonEncode(values.map(_slotToJson).toList()));
+  Future<void> _save(List<DispenserSlot> values) async {
+    await (await SharedPreferences.getInstance())
+        .setString(_key, jsonEncode(values.map(_slotToJson).toList()));
+    _syncScheduleWithEsp32(values);
+  }
+
+  void _syncScheduleWithEsp32(List<DispenserSlot> values) {
+    if (!_ble.isConnected || _ble.isMock) return;
+    try {
+      final scheduleList = <Map<String, dynamic>>[];
+      for (final slot in values) {
+        if (slot.drug != null && slot.remaining > 0) {
+          for (final instruction in slot.drug!.instructions) {
+            final timeStr = switch (instruction.meal) {
+              MealType.breakfast => '08:00',
+              MealType.lunch => '12:00',
+              MealType.dinner => '18:00',
+              MealType.bedtime => '21:00',
+            };
+            scheduleList.add({
+              'time': timeStr,
+              'slot': slot.number,
+              'medicine': slot.drug!.name,
+            });
+          }
+        }
+      }
+      if (scheduleList.isNotEmpty) {
+        final payload = jsonEncode({
+          'device_id': 'PD001',
+          'schedule': scheduleList,
+        });
+        _ble.sendSchedule(payload).catchError((_) => false);
+      }
+    } catch (_) {}
+  }
 
   Map<String, dynamic> _slotToJson(DispenserSlot slot) => {
         'number': slot.number,

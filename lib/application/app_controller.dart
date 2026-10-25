@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
+import '../data/ble_dispenser_service.dart';
 import '../domain/models.dart';
 import '../domain/meal_schedule.dart';
 import '../domain/repositories.dart';
@@ -12,6 +14,7 @@ class AppController extends ChangeNotifier {
   final DispenserRepository _dispenser;
   final MedicationRepository _medications;
   final DateTime Function() _now;
+  final BleDispenserService bleService = BleDispenserService.instance;
 
   bool connected = false;
   bool initialized = false;
@@ -52,6 +55,10 @@ class AppController extends ChangeNotifier {
       notifyListeners();
     });
     if (user != null) await _loadUserData();
+    bleService.connectionStateStream.listen((isConn) {
+      connected = isConn;
+      notifyListeners();
+    });
     initialized = true;
     notifyListeners();
   }
@@ -162,23 +169,57 @@ class AppController extends ChangeNotifier {
         .toList();
   }
 
-  Future<void> toggleConnection() async {
+  Future<bool> connectBleDevice(BluetoothDevice device) async {
     busy = true;
     errorMessage = null;
     notifyListeners();
     try {
-      if (connected) {
-        await _dispenser.disconnect();
-        connected = false;
-      } else {
-        connected = await _dispenser.connect();
-      }
+      final success = await bleService.connect(device);
+      connected = success;
+      return success;
     } catch (error) {
       connected = false;
-      errorMessage = error.toString().replaceFirst('Bad state: ', '');
+      errorMessage = error
+          .toString()
+          .replaceFirst('Bad state: ', '')
+          .replaceFirst('StateError: ', '')
+          .replaceFirst('Exception: ', '');
+      return false;
+    } finally {
+      busy = false;
+      notifyListeners();
     }
-    busy = false;
+  }
+
+  void connectMockDevice() {
+    bleService.connectMock();
+    connected = true;
+    errorMessage = null;
     notifyListeners();
+  }
+
+  Future<void> disconnectDispenser() async {
+    busy = true;
+    errorMessage = null;
+    notifyListeners();
+    try {
+      await bleService.disconnect();
+      await _dispenser.disconnect();
+      connected = false;
+    } catch (error) {
+      errorMessage = error.toString();
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> toggleConnection() async {
+    if (connected) {
+      await disconnectDispenser();
+    } else {
+      connectMockDevice();
+    }
   }
 
   Future<void> addDrugToSlot(Drug drug, int slot, int quantity) =>

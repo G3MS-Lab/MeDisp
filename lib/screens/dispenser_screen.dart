@@ -4,6 +4,7 @@ import '../theme/medis_theme.dart';
 
 import '../application/app_scope.dart';
 import '../domain/models.dart';
+import '../widgets/ble_device_picker_sheet.dart';
 import '../widgets/medis_app_bar.dart';
 import '../widgets/medis_ui.dart';
 import 'drug_detail_screen.dart';
@@ -31,13 +32,24 @@ class DispenserScreen extends StatelessWidget {
                     ? 'MeDispenser พร้อมใช้งาน'
                     : 'ยังไม่ได้เชื่อมต่อ'),
                 subtitle: Text(controller.connected
-                    ? 'สไลด์ยืนยันก่อนเพิ่มหรือแก้ไขยา'
+                    ? (controller.bleService.connectedDeviceName != null
+                        ? 'เชื่อมต่อกับ ${controller.bleService.connectedDeviceName}'
+                        : 'สไลด์ยืนยันก่อนเพิ่มหรือแก้ไขยา')
                     : 'เชื่อมต่อเครื่องก่อนเพิ่มหรือแก้ไขยา'),
                 trailing: Switch(
                     value: controller.connected,
                     onChanged: controller.busy
                         ? null
-                        : (_) => controller.toggleConnection()),
+                        : (val) {
+                            if (val) {
+                              showBleDevicePickerSheet(
+                                context: context,
+                                controller: controller,
+                              );
+                            } else {
+                              controller.disconnectDispenser();
+                            }
+                          }),
               ),
             ),
             const SizedBox(height: 22),

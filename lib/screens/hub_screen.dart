@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../application/app_scope.dart';
 import '../theme/medis_theme.dart';
+import '../widgets/ble_device_picker_sheet.dart';
 import '../widgets/medis_ui.dart';
 import 'all_drugs_screen.dart';
 import 'allergy_screen.dart';
@@ -113,7 +114,9 @@ class HubScreen extends StatelessWidget {
                         style: Theme.of(context).textTheme.titleSmall),
                     Text(
                         controller.connected
-                            ? 'เชื่อมต่อ MeDispenser แล้ว'
+                            ? (controller.bleService.connectedDeviceName != null
+                                ? 'เชื่อมต่อกับ ${controller.bleService.connectedDeviceName}'
+                                : 'เชื่อมต่อ MeDispenser แล้ว')
                             : 'เชื่อมต่อเพื่อเติมยาและรับยา',
                         style: Theme.of(context)
                             .textTheme
@@ -132,13 +135,16 @@ class HubScreen extends StatelessWidget {
                     ? OutlinedButton.icon(
                         onPressed: controller.busy
                             ? null
-                            : controller.toggleConnection,
+                            : controller.disconnectDispenser,
                         icon: const Icon(Icons.bluetooth_connected, size: 20),
                         label: const Text('ตัดการเชื่อมต่อ'))
                     : FilledButton.icon(
                         onPressed: controller.busy
                             ? null
-                            : controller.toggleConnection,
+                            : () => showBleDevicePickerSheet(
+                                  context: context,
+                                  controller: controller,
+                                ),
                         icon: const Icon(Icons.bluetooth, size: 20),
                         label: Text(controller.busy
                             ? 'กำลังเชื่อมต่อ...'
