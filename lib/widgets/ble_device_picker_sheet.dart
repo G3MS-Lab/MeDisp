@@ -26,18 +26,46 @@ class BleDevicePickerSheet extends StatefulWidget {
   State<BleDevicePickerSheet> createState() => _BleDevicePickerSheetState();
 }
 
+class DiscoveredBleEntry {
+  final BluetoothDevice device;
+  final int? rssi;
+  final bool isSystemDevice;
+
+  const DiscoveredBleEntry({
+    required this.device,
+    this.rssi,
+    this.isSystemDevice = false,
+  });
+}
+
 class _BleDevicePickerSheetState extends State<BleDevicePickerSheet> {
   final BleDispenserService _ble = BleDispenserService.instance;
   BluetoothDevice? _connectingDevice;
   String? _errorMessage;
   StreamSubscription<List<ScanResult>>? _scanSub;
-  List<ScanResult> _scanResults = [];
+  final Map<String, DiscoveredBleEntry> _devices = {};
   bool _isScanning = false;
 
   @override
   void initState() {
     super.initState();
     _initScan();
+  }
+
+  Future<void> _loadSystemDevices() async {
+    final sysDevices = await _ble.getSystemDevices();
+    if (!mounted) return;
+    setState(() {
+      for (final device in sysDevices) {
+        final id = device.remoteId.str;
+        if (!_devices.containsKey(id)) {
+          _devices[id] = DiscoveredBleEntry(
+            device: device,
+            isSystemDevice: true,
+          );
+        }
+      }
+    });
   }
 
   Future<void> _initScan() async {
@@ -60,10 +88,19 @@ class _BleDevicePickerSheetState extends State<BleDevicePickerSheet> {
       });
     }
 
+    // Load devices already known to the OS Bluetooth stack (crucial for Linux)
+    await _loadSystemDevices();
+
     _scanSub = _ble.scanResults.listen((results) {
       if (mounted) {
         setState(() {
-          _scanResults = results;
+          for (final r in results) {
+            _devices[r.device.remoteId.str] = DiscoveredBleEntry(
+              device: r.device,
+              rssi: r.rssi,
+              isSystemDevice: false,
+            );
+          }
         });
       }
     });
@@ -84,6 +121,7 @@ class _BleDevicePickerSheetState extends State<BleDevicePickerSheet> {
       _errorMessage = null;
     });
     try {
+      await _loadSystemDevices();
       await _ble.startScan(timeout: const Duration(seconds: 12));
     } catch (e) {
       if (mounted) {
@@ -170,7 +208,7 @@ class _BleDevicePickerSheetState extends State<BleDevicePickerSheet> {
   @override
   Widget build(BuildContext context) {
     // Sort devices: PillDispenser / MeDis first, then named devices, then MAC
-    final sortedList = List<ScanResult>.from(_scanResults);
+    final sortedList = _devices.values.toList();
     sortedList.sort((a, b) {
       final aName = a.device.platformName.toLowerCase();
       final bName = b.device.platformName.toLowerCase();
@@ -180,7 +218,9 @@ class _BleDevicePickerSheetState extends State<BleDevicePickerSheet> {
       if (!aIsPill && bIsPill) return 1;
       if (aName.isNotEmpty && bName.isEmpty) return -1;
       if (aName.isEmpty && bName.isNotEmpty) return 1;
-      return b.rssi.compareTo(a.rssi);
+      final aRssi = a.rssi ?? -100;
+      final bRssi = b.rssi ?? -100;
+      return bRssi.compareTo(aRssi);
     });
 
     return Container(
@@ -428,7 +468,9 @@ class _BleDevicePickerSheetState extends State<BleDevicePickerSheet> {
                             ],
                           ),
                           subtitle: Text(
-                            '${item.device.remoteId.str} • ${item.rssi} dBm',
+                            item.rssi != null
+                                ? '${item.device.remoteId.str} • ${item.rssi} dBm'
+                                : '${item.device.remoteId.str} • อุปกรณ์ในระบบ',
                             style: const TextStyle(
                               color: MeDisColors.muted,
                               fontSize: 12,

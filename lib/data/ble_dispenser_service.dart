@@ -59,6 +59,15 @@ class BleDispenserService {
     }
   }
 
+  Future<List<BluetoothDevice>> getSystemDevices() async {
+    try {
+      return await FlutterBluePlus.systemDevices([]);
+    } catch (e) {
+      debugPrint('[BLE] Get system devices error: $e');
+      return [];
+    }
+  }
+
   Future<void> turnOnBluetooth() async {
     try {
       await FlutterBluePlus.turnOn();
@@ -261,6 +270,52 @@ class BleDispenserService {
       debugPrint('[BLE] Write schedule error: $e');
       rethrow;
     }
+  }
+
+  /// Send a generic JSON command to ESP32 via Config characteristic
+  Future<bool> sendCommand(Map<String, dynamic> command) async {
+    if (_isMockConnected) {
+      debugPrint('[BLE MOCK] Sent command: ${command['cmd']}');
+      return true;
+    }
+    if (_configChar == null) {
+      throw StateError('ยังไม่ได้เชื่อมต่อเครื่องจ่ายยา');
+    }
+    try {
+      final payload = jsonEncode(command);
+      final bytes = utf8.encode(payload);
+      await _configChar!.write(bytes, withoutResponse: false);
+      debugPrint('[BLE] Sent command: ${command['cmd']} (${bytes.length} bytes)');
+      return true;
+    } catch (e) {
+      debugPrint('[BLE] Send command error: $e');
+      rethrow;
+    }
+  }
+
+  /// Sync current phone local time to ESP32
+  Future<bool> syncTime() async {
+    final now = DateTime.now();
+    // Use local epoch so ESP32 internal clock matches the phone's actual display time
+    final localEpoch = (now.millisecondsSinceEpoch ~/ 1000) + now.timeZoneOffset.inSeconds;
+    debugPrint('[BLE SYNC] Sending local time sync: epoch=$localEpoch (Local: $now, offset=${now.timeZoneOffset.inHours}h)');
+    return sendCommand({
+      'cmd': 'sync_time',
+      'epoch': localEpoch,
+      'tz_offset': now.timeZoneOffset.inSeconds,
+    });
+  }
+
+  /// Push full slots data to ESP32
+  Future<bool> sendSlots(List<Map<String, dynamic>> slotsData) async {
+    debugPrint('[BLE SYNC] Sending ${slotsData.length} slots to device');
+    return sendCommand({'cmd': 'sync_slots', 'slots': slotsData});
+  }
+
+  /// Request full sync data from ESP32 (triggers SYNC_DATA_READY event)
+  Future<bool> requestSyncData() async {
+    debugPrint('[BLE SYNC] Requesting full sync data from device');
+    return sendCommand({'cmd': 'get_sync_data'});
   }
 
   void _cleanup() {

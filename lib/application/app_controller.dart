@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
@@ -15,6 +18,11 @@ class AppController extends ChangeNotifier {
   final MedicationRepository _medications;
   final DateTime Function() _now;
   final BleDispenserService bleService = BleDispenserService.instance;
+
+  // Sync state
+  Timer? _timeSyncTimer;
+  StreamSubscription<String>? _bleEventSub;
+  bool _initialSyncDone = false;
 
   bool connected = false;
   bool initialized = false;
@@ -57,8 +65,15 @@ class AppController extends ChangeNotifier {
     if (user != null) await _loadUserData();
     bleService.connectionStateStream.listen((isConn) {
       connected = isConn;
+      if (isConn && !bleService.isMock) {
+        _performInitialSync();
+      } else if (!isConn) {
+        _stopPeriodicTimeSync();
+        _initialSyncDone = false;
+      }
       notifyListeners();
     });
+    _setupBleEventListener();
     initialized = true;
     notifyListeners();
   }
@@ -176,6 +191,9 @@ class AppController extends ChangeNotifier {
     try {
       final success = await bleService.connect(device);
       connected = success;
+      if (success && !bleService.isMock) {
+        await _performInitialSync();
+      }
       return success;
     } catch (error) {
       connected = false;
@@ -188,6 +206,192 @@ class AppController extends ChangeNotifier {
     } finally {
       busy = false;
       notifyListeners();
+    }
+  }
+
+  // ===========================================================================
+  // BLE Connection & Synchronization
+  // ===========================================================================
+
+  /// Initial sync upon BLE connection:
+  /// 1. Synchronizes phone local time with ESP32
+  /// 2. Pulls real-time slot state from ESP32 to overwrite local app state
+  Future<void> _performInitialSync() async {
+    if (_initialSyncDone) return;
+    debugPrint('[BLE SYNC] Performing initial BLE sync on connection (ESP32 -> App)...');
+
+    try {
+      // 1. Sync phone time to ESP32
+      await bleService.syncTime();
+      debugPrint('[BLE SYNC] ✓ Time sync sent successfully');
+
+      // 2. Read device status from ESP32
+      final statusJson = await bleService.readStatus();
+      debugPrint('[BLE SYNC] Device status: $statusJson');
+
+      if (statusJson != null && statusJson.trim().isNotEmpty) {
+        final statusData = jsonDecode(statusJson) as Map<String, dynamic>;
+        final deviceSlots = statusData['slots'] as List<dynamic>?;
+        if (deviceSlots != null && deviceSlots.isNotEmpty) {
+          await _syncSlotsFromDevice(deviceSlots);
+        }
+      }
+    } catch (e) {
+      debugPrint('[BLE SYNC] Initial sync error: $e');
+    }
+
+    _initialSyncDone = true;
+    _startPeriodicTimeSync();
+    notifyListeners();
+  }
+
+  /// Overwrite local app slots with current physical state from ESP32
+  Future<void> _syncSlotsFromDevice(List<dynamic> deviceSlots) async {
+    final currentSlots = List<DispenserSlot>.from(await _dispenser.slots());
+    bool changed = false;
+
+    for (final d in deviceSlots) {
+      if (d is! Map<String, dynamic>) continue;
+      final slotNum = d['slot'] as int? ?? d['number'] as int?;
+      if (slotNum == null || slotNum < 1 || slotNum > currentSlots.length) {
+        continue;
+      }
+
+      final index = currentSlots.indexWhere((s) => s.number == slotNum);
+      if (index < 0) continue;
+
+      final current = currentSlots[index];
+      final deviceRemaining = d['remaining'] as int? ?? 0;
+      final deviceDrug = (d['drug'] as String? ?? '').trim();
+
+      if (deviceDrug.isEmpty && deviceRemaining == 0) {
+        // ESP32 slot is empty -> App slot becomes empty
+        if (current.drug != null || current.remaining != 0) {
+          currentSlots[index] = DispenserSlot(
+            number: slotNum,
+            capacity: current.capacity,
+            remaining: 0,
+            drug: null,
+          );
+          changed = true;
+        }
+      } else {
+        // ESP32 slot has medication -> Update remaining count from machine
+        if (current.remaining != deviceRemaining ||
+            (current.drug == null && deviceDrug.isNotEmpty)) {
+          final updatedDrug =
+              current.drug ?? Drug(id: 'slot_$slotNum', name: deviceDrug);
+          currentSlots[index] = current.copyWith(
+            remaining: deviceRemaining,
+            drug: updatedDrug,
+          );
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      await _dispenser.updateSlotsFromDevice(currentSlots);
+      slots = await _dispenser.slots();
+      _rebuildMeals();
+      debugPrint(
+          '[BLE SYNC] ✓ Overwrote app slots with ESP32 state: ${slots.map((s) => "S${s.number}:${s.drug?.name ?? "ว่าง"}(${s.remaining})").join(", ")}');
+    } else {
+      debugPrint('[BLE SYNC] App slots already match ESP32');
+    }
+  }
+
+  /// Update single slot remaining from ESP32 DISPENSE_SUCCESS event
+  Future<void> _handleRemoteDispense(int slotNum, int remaining) async {
+    debugPrint(
+        '[BLE EVENT] Updating Slot $slotNum remaining from device: $remaining');
+    final currentSlots = List<DispenserSlot>.from(await _dispenser.slots());
+    final index = currentSlots.indexWhere((s) => s.number == slotNum);
+    if (index >= 0) {
+      currentSlots[index] = currentSlots[index].copyWith(remaining: remaining);
+      await _dispenser.updateSlotsFromDevice(currentSlots);
+      slots = await _dispenser.slots();
+      _rebuildMeals();
+      notifyListeners();
+    }
+  }
+
+  /// Start periodic time sync timer (every 15 minutes)
+  void _startPeriodicTimeSync() {
+    _timeSyncTimer?.cancel();
+    _timeSyncTimer = Timer.periodic(const Duration(minutes: 15), (_) {
+      if (bleService.isConnected && !bleService.isMock) {
+        bleService.syncTime().then((_) {
+          debugPrint('[BLE SYNC] Periodic time sync sent');
+        }).catchError((e) {
+          debugPrint('[BLE SYNC] Periodic time sync failed: $e');
+        });
+      }
+    });
+    debugPrint('[BLE SYNC] Periodic time sync timer started (every 15 min)');
+  }
+
+  /// Stop periodic time sync timer
+  void _stopPeriodicTimeSync() {
+    _timeSyncTimer?.cancel();
+    _timeSyncTimer = null;
+    debugPrint('[BLE SYNC] Periodic time sync timer stopped');
+  }
+
+  /// Listen to BLE response/event notifications from ESP32
+  void _setupBleEventListener() {
+    _bleEventSub?.cancel();
+    _bleEventSub = bleService.responseStream.listen(_handleBleEvent);
+    debugPrint('[BLE SYNC] BLE event listener set up');
+  }
+
+  /// Handle incoming BLE events from ESP32
+  void _handleBleEvent(String eventJson) {
+    try {
+      final data = jsonDecode(eventJson) as Map<String, dynamic>;
+      final event = data['event'] as String?;
+      if (event == null) return;
+
+      switch (event) {
+        case 'REQUEST_TIME_SYNC':
+          // ESP32 is requesting time sync (periodic 15-min backup)
+          debugPrint('[BLE EVENT] ESP32 requested time sync');
+          bleService.syncTime().catchError((_) => false);
+          break;
+
+        case 'DISPENSE_SUCCESS':
+          // ESP32 dispensed a pill
+          final slot = data['slot'] as int?;
+          final remaining = data['remaining'] as int?;
+          debugPrint(
+              '[BLE EVENT] Remote dispense: Slot $slot, remaining: $remaining');
+          if (slot != null && remaining != null) {
+            _handleRemoteDispense(slot, remaining);
+          }
+          break;
+
+        case 'SLOTS_SAVED':
+          debugPrint('[BLE EVENT] ESP32 confirmed slots saved');
+          break;
+
+        case 'SCHEDULE_SAVED':
+          debugPrint('[BLE EVENT] ESP32 confirmed schedule saved');
+          break;
+
+        case 'SYNC_DATA_READY':
+          debugPrint('[BLE EVENT] ESP32 sync data ready');
+          break;
+
+        case 'TIME_SYNC_OK':
+          debugPrint('[BLE EVENT] ESP32 confirmed time sync: ${data['time']}');
+          break;
+
+        case 'DISPENSER_RESET':
+          debugPrint('[BLE EVENT] ESP32 was factory reset');
+          break;
+      }
+    } catch (e) {
+      debugPrint('[BLE EVENT] Non-event notification: $eventJson');
     }
   }
 

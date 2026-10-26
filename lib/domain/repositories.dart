@@ -17,6 +17,7 @@ abstract interface class DispenserRepository {
   Future<void> fillSlot(int slotNumber, Drug drug, int quantity);
   Future<void> consume(Map<String, int> quantityByDrugId);
   Future<void> clearSlot(int slotNumber);
+  Future<void> updateSlotsFromDevice(List<DispenserSlot> slots);
 }
 
 abstract interface class MedicationRepository {
