@@ -279,8 +279,40 @@ class AppController extends ChangeNotifier {
         // ESP32 slot has medication -> Update remaining count from machine
         if (current.remaining != deviceRemaining ||
             (current.drug == null && deviceDrug.isNotEmpty)) {
-          final updatedDrug =
-              current.drug ?? Drug(id: 'slot_$slotNum', name: deviceDrug);
+          final isPrn = (d['is_prn'] as bool?) ?? false;
+          final minInterval = (d['min_interval_hours'] as int?) ?? 4;
+          final prnQty = (d['prn_qty'] as int?) ?? (d['qty'] as int?) ?? 1;
+          final currentDrug = current.drug;
+          final updatedDrug = currentDrug == null
+              ? Drug(
+                  id: 'slot_$slotNum',
+                  name: deviceDrug,
+                  isPrn: isPrn,
+                  prnConfig: isPrn
+                      ? PrnConfig(
+                          symptom: 'เมื่อมีอาการ',
+                          quantity: prnQty,
+                          minIntervalHours: minInterval,
+                          maxDosesPerDay: 4,
+                        )
+                      : null,
+                )
+              : currentDrug.copyWith(
+                  name: deviceDrug,
+                  isPrn: isPrn,
+                  prnConfig: isPrn
+                      ? (currentDrug.prnConfig?.copyWith(
+                              quantity: prnQty,
+                              minIntervalHours: minInterval,
+                            ) ??
+                            PrnConfig(
+                              symptom: 'เมื่อมีอาการ',
+                              quantity: prnQty,
+                              minIntervalHours: minInterval,
+                              maxDosesPerDay: 4,
+                            ))
+                      : null,
+                );
           currentSlots[index] = current.copyWith(
             remaining: deviceRemaining,
             drug: updatedDrug,

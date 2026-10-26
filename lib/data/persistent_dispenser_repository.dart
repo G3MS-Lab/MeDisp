@@ -117,10 +117,31 @@ class PersistentDispenserRepository implements DispenserRepository {
                 'remaining': slot.remaining,
                 'drug': slot.drug?.name ?? '',
                 if (slot.capacity != 30) 'capacity': slot.capacity,
+                if (slot.drug != null) 'is_prn': slot.drug!.isPrn,
+                if (slot.drug != null && slot.drug!.isPrn) ...{
+                  'min_interval_hours':
+                      slot.drug!.prnConfig?.minIntervalHours ?? 4,
+                  'prn_qty': slot.drug!.prnConfig?.quantity ?? 1,
+                },
               })
           .toList();
-      await _ble.sendSlots(slotsData);
-      debugPrint('[BLE SYNC] ✓ sendSlots succeeded');
+
+      final payload = jsonEncode({'cmd': 'sync_slots', 'slots': slotsData});
+      final bytes = utf8.encode(payload);
+      if (bytes.length <= 480) {
+        await _ble.sendSlots(slotsData);
+        debugPrint('[BLE SYNC] ✓ sendSlots succeeded (${bytes.length} bytes)');
+      } else {
+        debugPrint(
+            '[BLE SYNC] Slots payload is large (${bytes.length} bytes > 480B). Splitting into batches...');
+        for (var i = 0; i < slotsData.length; i += 2) {
+          final batch = slotsData.sublist(
+              i, (i + 2 > slotsData.length) ? slotsData.length : i + 2);
+          await _ble.sendSlots(batch);
+          await Future<void>.delayed(const Duration(milliseconds: 60));
+        }
+        debugPrint('[BLE SYNC] ✓ sendSlots succeeded via batch splitting');
+      }
     } catch (e) {
       debugPrint('[BLE SYNC] ✗ sendSlots failed: $e');
     }
@@ -171,12 +192,29 @@ class PersistentDispenserRepository implements DispenserRepository {
           final slotItems = scheduleList
               .where((item) => item['slot'] == slot.number)
               .toList();
-          await _ble.sendCommand({
+          var slotCmd = <String, dynamic>{
             'cmd': 'set_slot_schedule',
             'device_id': 'PD001',
             'slot': slot.number,
             'schedule': slotItems,
-          });
+          };
+          if (utf8.encode(jsonEncode(slotCmd)).length > 480) {
+            // Trim medicine names in slotItems to stay under MTU
+            final trimmedItems = slotItems.map((item) {
+              final med = item['medicine'] as String? ?? '';
+              return {
+                ...item,
+                'medicine': med.length > 20 ? med.substring(0, 20) : med,
+              };
+            }).toList();
+            slotCmd = {
+              'cmd': 'set_slot_schedule',
+              'device_id': 'PD001',
+              'slot': slot.number,
+              'schedule': trimmedItems,
+            };
+          }
+          await _ble.sendCommand(slotCmd);
           await Future<void>.delayed(const Duration(milliseconds: 60));
         }
         debugPrint(
