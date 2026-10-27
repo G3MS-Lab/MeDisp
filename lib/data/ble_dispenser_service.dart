@@ -318,6 +318,63 @@ class BleDispenserService {
     return sendCommand({'cmd': 'get_sync_data'});
   }
 
+  /// Request schedule sync from ESP32 (streams SLOT_SCHEDULE per slot)
+  Future<bool> requestScheduleSync() async {
+    debugPrint('[BLE SYNC] Requesting schedule sync from device');
+    return sendCommand({'cmd': 'get_schedule'});
+  }
+
+  /// Request 7-day intake history sync from ESP32
+  Future<bool> requestHistorySync({int? dayOffset}) async {
+    debugPrint(
+        '[BLE SYNC] Requesting intake history from device (dayOffset: $dayOffset)');
+    return sendCommand({
+      'cmd': 'sync_history',
+      if (dayOffset != null) 'day_offset': dayOffset,
+    });
+  }
+
+  /// Record medication intake on ESP32 history & trigger dispenser
+  Future<bool> recordIntake({
+    required int slot,
+    int qty = 1,
+    String? medicine,
+    String type = 'meal',
+    String? schedTime,
+    String status = 'taken',
+  }) async {
+    debugPrint(
+        '[BLE SYNC] Recording intake: Slot $slot, Qty $qty, $type, schedTime: $schedTime');
+    return sendCommand({
+      'cmd': 'record_intake',
+      'slot': slot,
+      'qty': qty,
+      'medicine': medicine ?? '',
+      'type': type,
+      if (schedTime != null && schedTime.isNotEmpty) 'sched_time': schedTime,
+      'status': status,
+    });
+  }
+
+  /// Request dispense directly from ESP32
+  Future<bool> dispense({
+    required int slot,
+    int qty = 1,
+    String? medicine,
+    String type = 'meal',
+    String? schedTime,
+  }) async {
+    debugPrint('[BLE SYNC] Requesting dispense: Slot $slot, Qty $qty');
+    return sendCommand({
+      'cmd': 'dispense',
+      'slot': slot,
+      'qty': qty,
+      'medicine': medicine ?? '',
+      'type': type,
+      if (schedTime != null && schedTime.isNotEmpty) 'sched_time': schedTime,
+    });
+  }
+
   void _cleanup() {
     _connectionStateSub?.cancel();
     _connectionStateSub = null;

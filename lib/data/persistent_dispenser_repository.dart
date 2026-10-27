@@ -122,6 +122,8 @@ class PersistentDispenserRepository implements DispenserRepository {
                   'min_interval_hours':
                       slot.drug!.prnConfig?.minIntervalHours ?? 4,
                   'prn_qty': slot.drug!.prnConfig?.quantity ?? 1,
+                  'max_doses_per_day':
+                      slot.drug!.prnConfig?.maxDosesPerDay ?? 4,
                 },
               })
           .toList();
@@ -150,76 +152,42 @@ class PersistentDispenserRepository implements DispenserRepository {
   Future<void> _syncScheduleWithEsp32(List<DispenserSlot> values) async {
     if (!_ble.isConnected || _ble.isMock) return;
     try {
-      final scheduleList = <Map<String, dynamic>>[];
       for (final slot in values) {
-        // Include any regular (non-PRN) drug across all slots
+        final slotItems = <Map<String, dynamic>>[];
         if (slot.drug != null && !slot.drug!.isPrn) {
-          for (final instruction in slot.drug!.instructions) {
+          final sortedInstructions =
+              List<DoseInstruction>.from(slot.drug!.instructions)
+                ..sort((a, b) => a.meal.index.compareTo(b.meal.index));
+          for (final instruction in sortedInstructions) {
             final timeStr = switch (instruction.meal) {
               MealType.breakfast => '08:00',
               MealType.lunch => '12:00',
               MealType.dinner => '18:00',
               MealType.bedtime => '21:00',
             };
-            scheduleList.add({
+            slotItems.add({
               'time': timeStr,
               'slot': slot.number,
-              'medicine': slot.drug!.name,
+              'medicine': slot.drug!.name.length > 36
+                  ? slot.drug!.name.substring(0, 36)
+                  : slot.drug!.name,
               'qty': instruction.quantity,
               'before_food': instruction.beforeFood,
             });
           }
         }
-      }
 
-      final payload = jsonEncode({
-        'device_id': 'PD001',
-        'schedule': scheduleList,
-      });
+        final slotCmd = <String, dynamic>{
+          'cmd': 'set_slot_schedule',
+          'device_id': 'PD001',
+          'slot': slot.number,
+          'schedule': slotItems,
+        };
 
-      // BLE GATT attribute limit in Bluetooth specification is 512 bytes
-      final bytes = utf8.encode(payload);
-      if (bytes.length <= 480) {
-        // Safe to send all at once
-        await _ble.sendSchedule(payload);
-        debugPrint(
-            '[BLE SYNC] ✓ sendSchedule succeeded (${scheduleList.length} items for slots: ${scheduleList.map((e) => e["slot"]).toSet().toList()})');
-      } else {
-        // Payload exceeds safe BLE MTU; split & sync per slot
-        debugPrint(
-            '[BLE SYNC] Schedule payload is large (${bytes.length} bytes > 480B). Splitting by slot...');
-        for (final slot in values) {
-          final slotItems = scheduleList
-              .where((item) => item['slot'] == slot.number)
-              .toList();
-          var slotCmd = <String, dynamic>{
-            'cmd': 'set_slot_schedule',
-            'device_id': 'PD001',
-            'slot': slot.number,
-            'schedule': slotItems,
-          };
-          if (utf8.encode(jsonEncode(slotCmd)).length > 480) {
-            // Trim medicine names in slotItems to stay under MTU
-            final trimmedItems = slotItems.map((item) {
-              final med = item['medicine'] as String? ?? '';
-              return {
-                ...item,
-                'medicine': med.length > 20 ? med.substring(0, 20) : med,
-              };
-            }).toList();
-            slotCmd = {
-              'cmd': 'set_slot_schedule',
-              'device_id': 'PD001',
-              'slot': slot.number,
-              'schedule': trimmedItems,
-            };
-          }
-          await _ble.sendCommand(slotCmd);
-          await Future<void>.delayed(const Duration(milliseconds: 60));
-        }
-        debugPrint(
-            '[BLE SYNC] ✓ sendSchedule succeeded via per-slot splitting (${scheduleList.length} items)');
+        await _ble.sendCommand(slotCmd);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
       }
+      debugPrint('[BLE SYNC] ✓ Synced per-slot schedule with ESP32');
     } catch (e) {
       debugPrint('[BLE SYNC] ✗ sendSchedule failed: $e');
     }

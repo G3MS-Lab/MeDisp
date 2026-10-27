@@ -257,20 +257,19 @@ List<ScheduledMealCardData> _buildMealCards(
 int _calculateInitialIndex(
     List<ScheduledMealCardData> cards, MealPlan? currentMeal) {
   if (cards.isEmpty) return 0;
-  // 1. Prioritize current meal that is not yet completed
+  // 1. Prioritize current meal card if present
   if (currentMeal != null) {
-    final curIdx = cards
+    final curIncomplete = cards
         .indexWhere((c) => c.mealType == currentMeal.type && !c.isCompleted);
+    if (curIncomplete != -1) return curIncomplete;
+
+    final curIdx = cards.indexWhere((c) => c.mealType == currentMeal.type);
     if (curIdx != -1) return curIdx;
   }
   // 2. Prioritize first incomplete card
   final firstIncomplete = cards.indexWhere((c) => !c.isCompleted);
   if (firstIncomplete != -1) return firstIncomplete;
-  // 3. Fallback to currentMeal card if present
-  if (currentMeal != null) {
-    final curIdx = cards.indexWhere((c) => c.mealType == currentMeal.type);
-    if (curIdx != -1) return curIdx;
-  }
+
   return 0;
 }
 
@@ -371,9 +370,20 @@ class _CurvedMealCarouselState extends State<_CurvedMealCarousel> {
   @override
   void didUpdateWidget(covariant _CurvedMealCarousel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_currentPage >= widget.cards.length && widget.cards.isNotEmpty) {
+    if (oldWidget.cards.length != widget.cards.length ||
+        (oldWidget.currentMealIndex != widget.currentMealIndex &&
+            widget.currentMealIndex != -1)) {
+      final target = widget.initialIndex.clamp(
+          0, widget.cards.isEmpty ? 0 : widget.cards.length - 1);
+      _currentPage = target;
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(target);
+      }
+    } else if (_currentPage >= widget.cards.length && widget.cards.isNotEmpty) {
       _currentPage = widget.cards.length - 1;
-      _pageController.jumpToPage(_currentPage);
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(_currentPage);
+      }
     }
   }
 

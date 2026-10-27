@@ -213,12 +213,185 @@ class AppController extends ChangeNotifier {
   // BLE Connection & Synchronization
   // ===========================================================================
 
+  MealType _matchMealTypeFromTime(String timeStr) {
+    final parts = timeStr.split(':');
+    if (parts.length >= 2) {
+      final hour = int.tryParse(parts[0]) ?? 8;
+      if (hour < 11) return MealType.breakfast;
+      if (hour < 15) return MealType.lunch;
+      if (hour < 20) return MealType.dinner;
+      return MealType.bedtime;
+    }
+    return MealType.breakfast;
+  }
+
+  /// Apply schedule for a single slot from ESP32
+  Future<void> _applySlotSchedule(
+      int slotNumber, List<dynamic> slotItems) async {
+    try {
+      final currentSlots = List<DispenserSlot>.from(await _dispenser.slots());
+      final index = currentSlots.indexWhere((s) => s.number == slotNumber);
+      if (index < 0) return;
+      final slot = currentSlots[index];
+
+      // Reconstruct drug if slot in blank app is empty but has schedule from ESP32
+      Drug? targetDrug = slot.drug;
+      if (targetDrug == null) {
+        String medName = '';
+        for (final item in slotItems) {
+          if (item is Map<String, dynamic>) {
+            final m = (item['medicine'] as String? ??
+                    item['med'] as String? ??
+                    '')
+                .trim();
+            if (m.isNotEmpty) {
+              medName = m;
+              break;
+            }
+          }
+        }
+        if (medName.isNotEmpty) {
+          targetDrug = Drug(
+            id: 'slot_$slotNumber',
+            name: medName,
+            isPrn: false,
+          );
+        }
+      }
+      if (targetDrug == null || targetDrug.isPrn) return;
+
+      final instructions = slotItems.map((item) {
+        if (item is! Map<String, dynamic>) {
+          return const DoseInstruction(meal: MealType.breakfast, quantity: 1);
+        }
+        final timeStr =
+            item['time'] as String? ?? item['t'] as String? ?? '08:00';
+        final qty = item['qty'] as int? ?? item['q'] as int? ?? 1;
+        final beforeFood = item['before_food'] as bool? ?? true;
+        final meal = switch (timeStr) {
+          '08:00' => MealType.breakfast,
+          '12:00' => MealType.lunch,
+          '18:00' => MealType.dinner,
+          '21:00' => MealType.bedtime,
+          _ => _matchMealTypeFromTime(timeStr),
+        };
+        return DoseInstruction(
+          meal: meal,
+          quantity: qty,
+          beforeFood: beforeFood,
+        );
+      }).toList();
+
+      final updatedDrug = targetDrug.copyWith(instructions: instructions);
+      currentSlots[index] = slot.copyWith(drug: updatedDrug);
+
+      await _dispenser.updateSlotsFromDevice(currentSlots);
+      await _medications.saveDrug(updatedDrug);
+      drugs = await _medications.drugs();
+      slots = await _dispenser.slots();
+      _rebuildMeals();
+      notifyListeners();
+      debugPrint(
+          '[BLE SYNC] ✓ Applied schedule for Slot $slotNumber (${instructions.length} items)');
+    } catch (e) {
+      debugPrint('[BLE SYNC] Error applying slot schedule: $e');
+    }
+  }
+
+  /// Reconstruct drug meal schedule from ESP32 active schedule
+  Future<void> _syncScheduleFromDevice(String scheduleJson) async {
+    try {
+      final data = jsonDecode(scheduleJson) as Map<String, dynamic>;
+      final scheduleArr = data['schedule'] as List<dynamic>?;
+      if (scheduleArr == null || scheduleArr.isEmpty) return;
+
+      final currentSlots = List<DispenserSlot>.from(await _dispenser.slots());
+      bool changed = false;
+
+      for (var i = 0; i < currentSlots.length; i++) {
+        final slot = currentSlots[i];
+
+        final slotItems = scheduleArr.where((item) {
+          if (item is! Map<String, dynamic>) return false;
+          final s = item['slot'] as int? ?? item['s'] as int? ?? 0;
+          return s == slot.number;
+        }).toList();
+
+        Drug? targetDrug = slot.drug;
+        if (targetDrug == null && slotItems.isNotEmpty) {
+          String medName = '';
+          for (final item in slotItems) {
+            if (item is Map<String, dynamic>) {
+              final m = (item['medicine'] as String? ??
+                      item['med'] as String? ??
+                      '')
+                  .trim();
+              if (m.isNotEmpty) {
+                medName = m;
+                break;
+              }
+            }
+          }
+          if (medName.isNotEmpty) {
+            targetDrug = Drug(
+              id: 'slot_${slot.number}',
+              name: medName,
+              isPrn: false,
+            );
+          }
+        }
+        if (targetDrug == null || targetDrug.isPrn) continue;
+
+        if (slotItems.isNotEmpty) {
+          final instructions = slotItems.map((item) {
+            final timeStr =
+                item['time'] as String? ?? item['t'] as String? ?? '08:00';
+            final qty = item['qty'] as int? ?? item['q'] as int? ?? 1;
+            final beforeFood = item['before_food'] as bool? ?? true;
+            final meal = switch (timeStr) {
+              '08:00' => MealType.breakfast,
+              '12:00' => MealType.lunch,
+              '18:00' => MealType.dinner,
+              '21:00' => MealType.bedtime,
+              _ => _matchMealTypeFromTime(timeStr),
+            };
+            return DoseInstruction(
+              meal: meal,
+              quantity: qty,
+              beforeFood: beforeFood,
+            );
+          }).toList();
+
+          final updatedDrug =
+              targetDrug.copyWith(instructions: instructions);
+          currentSlots[i] = slot.copyWith(drug: updatedDrug);
+          await _medications.saveDrug(updatedDrug);
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        await _dispenser.updateSlotsFromDevice(currentSlots);
+        drugs = await _medications.drugs();
+        slots = await _dispenser.slots();
+        _rebuildMeals();
+        notifyListeners();
+        debugPrint('[BLE SYNC] ✓ Synced schedule from ESP32 into app slots');
+      }
+    } catch (e) {
+      debugPrint('[BLE SYNC] Error syncing schedule from device: $e');
+    }
+  }
+
   /// Initial sync upon BLE connection:
   /// 1. Synchronizes phone local time with ESP32
   /// 2. Pulls real-time slot state from ESP32 to overwrite local app state
+  /// 3. Pulls active schedule from ESP32 to reconstruct drug instructions
+  /// 4. Pulls 7-day intake history from ESP32 to reconcile intake status
   Future<void> _performInitialSync() async {
     if (_initialSyncDone) return;
-    debugPrint('[BLE SYNC] Performing initial BLE sync on connection (ESP32 -> App)...');
+    debugPrint(
+        '[BLE SYNC] Performing initial BLE sync on connection (ESP32 -> App)...');
 
     try {
       // 1. Sync phone time to ESP32
@@ -236,6 +409,18 @@ class AppController extends ChangeNotifier {
           await _syncSlotsFromDevice(deviceSlots);
         }
       }
+
+      // 3. Request active schedule from ESP32 (streams SLOT_SCHEDULE per slot)
+      await bleService.requestScheduleSync();
+      // Read active schedule characteristic as fallback
+      final scheduleJson = await bleService.readSchedule();
+      if (scheduleJson != null && scheduleJson.trim().isNotEmpty) {
+        await _syncScheduleFromDevice(scheduleJson);
+      }
+
+      // 4. Request 7-day intake history sync from ESP32 (source of truth for last 7 days)
+      await bleService.requestHistorySync();
+      debugPrint('[BLE SYNC] ✓ Requested 7-day history sync from ESP32');
     } catch (e) {
       debugPrint('[BLE SYNC] Initial sync error: $e');
     }
@@ -282,6 +467,9 @@ class AppController extends ChangeNotifier {
           final isPrn = (d['is_prn'] as bool?) ?? false;
           final minInterval = (d['min_interval_hours'] as int?) ?? 4;
           final prnQty = (d['prn_qty'] as int?) ?? (d['qty'] as int?) ?? 1;
+          final maxDoses = (d['max_doses_per_day'] as int?) ??
+              (d['max_doses'] as int?) ??
+              4;
           final currentDrug = current.drug;
           final updatedDrug = currentDrug == null
               ? Drug(
@@ -293,7 +481,7 @@ class AppController extends ChangeNotifier {
                           symptom: 'เมื่อมีอาการ',
                           quantity: prnQty,
                           minIntervalHours: minInterval,
-                          maxDosesPerDay: 4,
+                          maxDosesPerDay: maxDoses,
                         )
                       : null,
                 )
@@ -304,12 +492,13 @@ class AppController extends ChangeNotifier {
                       ? (currentDrug.prnConfig?.copyWith(
                               quantity: prnQty,
                               minIntervalHours: minInterval,
+                              maxDosesPerDay: maxDoses,
                             ) ??
                             PrnConfig(
                               symptom: 'เมื่อมีอาการ',
                               quantity: prnQty,
                               minIntervalHours: minInterval,
-                              maxDosesPerDay: 4,
+                              maxDosesPerDay: maxDoses,
                             ))
                       : null,
                 );
@@ -324,8 +513,15 @@ class AppController extends ChangeNotifier {
 
     if (changed) {
       await _dispenser.updateSlotsFromDevice(currentSlots);
+      for (final slot in currentSlots) {
+        if (slot.drug != null) {
+          await _medications.saveDrug(slot.drug!);
+        }
+      }
+      drugs = await _medications.drugs();
       slots = await _dispenser.slots();
       _rebuildMeals();
+      notifyListeners();
       debugPrint(
           '[BLE SYNC] ✓ Overwrote app slots with ESP32 state: ${slots.map((s) => "S${s.number}:${s.drug?.name ?? "ว่าง"}(${s.remaining})").join(", ")}');
     } else {
@@ -334,17 +530,178 @@ class AppController extends ChangeNotifier {
   }
 
   /// Update single slot remaining from ESP32 DISPENSE_SUCCESS event
-  Future<void> _handleRemoteDispense(int slotNum, int remaining) async {
+  /// and record intake if live dispense occurred
+  Future<void> _handleRemoteDispense(int slotNum, int remaining,
+      {int qty = 1}) async {
     debugPrint(
-        '[BLE EVENT] Updating Slot $slotNum remaining from device: $remaining');
+        '[BLE EVENT] Updating Slot $slotNum remaining from device: $remaining (qty: $qty)');
     final currentSlots = List<DispenserSlot>.from(await _dispenser.slots());
     final index = currentSlots.indexWhere((s) => s.number == slotNum);
     if (index >= 0) {
       currentSlots[index] = currentSlots[index].copyWith(remaining: remaining);
       await _dispenser.updateSlotsFromDevice(currentSlots);
       slots = await _dispenser.slots();
+
+      final drug = currentSlots[index].drug;
+      if (drug != null) {
+        final now = _now();
+        final isPrn = drug.isPrn;
+        final timeStr =
+            '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+        final mealType = isPrn ? null : _matchMealTypeFromTime(timeStr);
+
+        // Check if an intake record already exists to prevent duplicate entries
+        final alreadyExists = intakeHistory.any((h) {
+          if (isPrn) {
+            return h.isPrn &&
+                h.doses.any((d) =>
+                    d.drug.id == drug.id || d.drug.name == drug.name) &&
+                DateUtils.isSameDay(h.takenAt, now) &&
+                h.takenAt.difference(now).inMinutes.abs() < 5;
+          } else {
+            return !h.isPrn &&
+                h.meal == mealType &&
+                DateUtils.isSameDay(h.takenAt, now) &&
+                h.takenAt.difference(now).inMinutes.abs() < 10;
+          }
+        });
+
+        if (!alreadyExists) {
+          final record = IntakeRecord(
+            id: 'remote_${now.millisecondsSinceEpoch}_s$slotNum',
+            takenAt: now,
+            meal: mealType,
+            isPrn: isPrn,
+            reason: isPrn ? (drug.prnConfig?.symptom ?? 'เมื่อมีอาการ') : null,
+            doses: [DrugDose(drug, qty)],
+          );
+          await _medications.saveIntake(record);
+          intakeHistory = await _medications.intakeHistory();
+        }
+      }
+
       _rebuildMeals();
       notifyListeners();
+    }
+  }
+
+  /// Merge a single day's intake history from ESP32 into app's repository.
+  /// Note: The device is the source of truth for the last 7 days.
+  /// Older history on the app/cloud (> 7 days) is NEVER deleted.
+  Future<void> _mergeHistoryDayFromDevice(
+      String dateStr, List<dynamic> records) async {
+    try {
+      final existingRecords =
+          List<IntakeRecord>.from(await _medications.intakeHistory());
+      final currentSlots = await _dispenser.slots();
+      bool changed = false;
+
+      for (final r in records) {
+        if (r is! Map<String, dynamic>) continue;
+        final timeStr = r['time'] as String? ?? '00:00';
+        final slotNum = r['slot'] as int? ?? 1;
+        final qty = r['qty'] as int? ?? 1;
+        final type = r['type'] as String? ?? 'meal';
+        final isPrn = type == 'prn';
+
+        DateTime takenAt;
+        try {
+          takenAt = DateTime.parse('$dateStr $timeStr:00');
+        } catch (_) {
+          takenAt = _now();
+        }
+
+        final slot =
+            currentSlots.where((s) => s.number == slotNum).firstOrNull;
+        final medName = (r['med'] as String? ?? '').trim();
+        final drug = slot?.drug ??
+            Drug(
+              id: 'slot_$slotNum',
+              name: medName.isNotEmpty ? medName : 'ยาช่อง $slotNum',
+              isPrn: isPrn,
+            );
+
+        // Ensure drug is saved so dose details and pill count are never lost
+        await _medications.saveDrug(drug);
+
+        final mealType = isPrn ? null : _matchMealTypeFromTime(timeStr);
+
+        if (isPrn) {
+          final alreadyExists = existingRecords.any((h) =>
+              h.isPrn &&
+              h.doses.any((d) =>
+                  d.drug.id == drug.id ||
+                  d.drug.name == drug.name ||
+                  d.drug.name == medName) &&
+              DateUtils.isSameDay(h.takenAt, takenAt) &&
+              h.takenAt.difference(takenAt).inMinutes.abs() < 10);
+
+          if (!alreadyExists) {
+            final record = IntakeRecord(
+              id: 'esp32_${takenAt.millisecondsSinceEpoch}_s$slotNum',
+              takenAt: takenAt,
+              meal: null,
+              isPrn: true,
+              reason: drug.prnConfig?.symptom ?? 'เมื่อมีอาการ',
+              doses: [DrugDose(drug, qty)],
+            );
+            await _medications.saveIntake(record);
+            existingRecords.add(record);
+            changed = true;
+          }
+        } else {
+          final existingMealIndex = existingRecords.indexWhere((h) =>
+              !h.isPrn &&
+              (h.meal == mealType ||
+                  h.takenAt.difference(takenAt).inMinutes.abs() < 15) &&
+              DateUtils.isSameDay(h.takenAt, takenAt));
+
+          if (existingMealIndex >= 0) {
+            final existingMeal = existingRecords[existingMealIndex];
+            final hasDrug = existingMeal.doses.any((d) =>
+                d.drug.id == drug.id ||
+                d.drug.name == drug.name ||
+                d.drug.name == medName);
+            if (!hasDrug) {
+              final updatedDoses = List<DrugDose>.from(existingMeal.doses)
+                ..add(DrugDose(drug, qty));
+              final updatedMeal = IntakeRecord(
+                id: existingMeal.id,
+                takenAt: existingMeal.takenAt,
+                meal: existingMeal.meal ?? mealType,
+                isPrn: false,
+                reason: existingMeal.reason,
+                doses: updatedDoses,
+              );
+              await _medications.saveIntake(updatedMeal);
+              existingRecords[existingMealIndex] = updatedMeal;
+              changed = true;
+            }
+          } else {
+            final record = IntakeRecord(
+              id: 'esp32_${takenAt.millisecondsSinceEpoch}_s$slotNum',
+              takenAt: takenAt,
+              meal: mealType,
+              isPrn: false,
+              reason: null,
+              doses: [DrugDose(drug, qty)],
+            );
+            await _medications.saveIntake(record);
+            existingRecords.add(record);
+            changed = true;
+          }
+        }
+      }
+
+      if (changed) {
+        drugs = await _medications.drugs();
+        intakeHistory = await _medications.intakeHistory();
+        _rebuildMeals();
+        notifyListeners();
+        debugPrint('[BLE SYNC] ✓ Merged device history for $dateStr into app');
+      }
+    } catch (e) {
+      debugPrint('[BLE SYNC] Error merging history day: $e');
     }
   }
 
@@ -395,15 +752,59 @@ class AppController extends ChangeNotifier {
           // ESP32 dispensed a pill
           final slot = data['slot'] as int?;
           final remaining = data['remaining'] as int?;
+          final qty = data['qty'] as int? ?? 1;
           debugPrint(
-              '[BLE EVENT] Remote dispense: Slot $slot, remaining: $remaining');
+              '[BLE EVENT] Remote dispense: Slot $slot, remaining: $remaining, qty: $qty');
           if (slot != null && remaining != null) {
-            _handleRemoteDispense(slot, remaining);
+            _handleRemoteDispense(slot, remaining, qty: qty);
           }
+          break;
+
+        case 'HISTORY_DAY':
+          final records = data['records'] as List<dynamic>?;
+          final dateStr = data['date'] as String?;
+          if (records != null && records.isNotEmpty && dateStr != null) {
+            _mergeHistoryDayFromDevice(dateStr, records);
+          }
+          break;
+
+        case 'HISTORY_SYNC_DONE':
+          debugPrint('[BLE EVENT] ESP32 confirmed history sync finished');
+          _medications.intakeHistory().then((history) {
+            intakeHistory = history;
+            _rebuildMeals();
+            notifyListeners();
+          });
+          break;
+
+        case 'INTAKE_RECORDED':
+          debugPrint(
+              '[BLE EVENT] ESP32 confirmed intake recorded: Slot ${data['slot']}');
           break;
 
         case 'SLOTS_SAVED':
           debugPrint('[BLE EVENT] ESP32 confirmed slots saved');
+          break;
+
+        case 'SLOT_SCHEDULE':
+          final slot = data['slot'] as int?;
+          final schedule = data['schedule'] as List<dynamic>?;
+          if (slot != null && schedule != null) {
+            _applySlotSchedule(slot, schedule);
+          }
+          break;
+
+        case 'SCHEDULE_DATA':
+          final schedule = data['schedule'] as List<dynamic>?;
+          if (schedule != null && schedule.isNotEmpty) {
+            _syncScheduleFromDevice(jsonEncode(data));
+          }
+          break;
+
+        case 'SCHEDULE_SYNC_DONE':
+          debugPrint('[BLE EVENT] Device confirmed schedule sync finished');
+          _rebuildMeals();
+          notifyListeners();
           break;
 
         case 'SCHEDULE_SAVED':
@@ -536,6 +937,31 @@ class AppController extends ChangeNotifier {
     intakeHistory = await _medications.intakeHistory();
     slots = await _dispenser.slots();
 
+    // Sync intake event to connected ESP32 so it records in 7-day history & updates schedule status
+    if (bleService.isConnected && !bleService.isMock) {
+      final hourStr = meal.time.hour.toString().padLeft(2, '0');
+      final minuteStr = meal.time.minute.toString().padLeft(2, '0');
+      final schedTime = '$hourStr:$minuteStr';
+
+      for (final dose in dosesToConsume) {
+        final slot =
+            slots.where((s) => s.drug?.id == dose.drug.id).firstOrNull;
+        if (slot != null) {
+          try {
+            await bleService.recordIntake(
+              slot: slot.number,
+              qty: dose.quantity,
+              medicine: dose.drug.name,
+              type: 'meal',
+              schedTime: schedTime,
+            );
+          } catch (e) {
+            debugPrint('[BLE INTAKE] Error recording intake to device: $e');
+          }
+        }
+      }
+    }
+
     final today = now;
     final todayIntakeDrugIds = intakeHistory
         .where((record) =>
@@ -566,28 +992,34 @@ class AppController extends ChangeNotifier {
         const PrnConfig(
             symptom: '', quantity: 1, minIntervalHours: 4, maxDosesPerDay: 4);
     final now = _now();
-    final dayAgo = now.subtract(const Duration(hours: 24));
 
-    final drugIntakesLast24Hours = intakeHistory
-        .where((record) => record.isPrn && record.takenAt.isAfter(dayAgo))
-        .where((record) => record.doses.any((dose) => dose.drug.id == drug.id))
+    // All PRN intakes for this drug, newest first
+    final allPrnIntakes = intakeHistory
+        .where((record) =>
+            record.isPrn &&
+            record.doses.any((dose) => dose.drug.id == drug.id))
         .toList()
       ..sort((a, b) => b.takenAt.compareTo(a.takenAt));
 
-    final countLast24h = drugIntakesLast24Hours.length;
+    // Daily quota count: resets every midnight (00:00:00)
+    final countToday = allPrnIntakes
+        .where((record) => DateUtils.isSameDay(record.takenAt, now))
+        .length;
 
-    if (countLast24h >= config.maxDosesPerDay) {
+    // 1. Enforce max doses per day (resets every midnight)
+    if (countToday >= config.maxDosesPerDay) {
       return PrnStatus(
         canTake: false,
         reason:
-            'ทานครบโควตาสูงสุด ${config.maxDosesPerDay} ครั้งในรอบ 24 ชม. แล้ว',
-        dosesTakenLast24Hours: countLast24h,
+            'ทานครบโควตาสูงสุด ${config.maxDosesPerDay} ครั้งต่อวันแล้ว (รีเซ็ตเที่ยงคืน)',
+        dosesTakenLast24Hours: countToday,
         maxDosesPerDay: config.maxDosesPerDay,
       );
     }
 
-    if (drugIntakesLast24Hours.isNotEmpty) {
-      final lastTaken = drugIntakesLast24Hours.first.takenAt;
+    // 2. Enforce minimum safety interval between consecutive doses
+    if (allPrnIntakes.isNotEmpty) {
+      final lastTaken = allPrnIntakes.first.takenAt;
       final nextAvailable =
           lastTaken.add(Duration(hours: config.minIntervalHours));
       if (now.isBefore(nextAvailable)) {
@@ -599,7 +1031,7 @@ class AppController extends ChangeNotifier {
         return PrnStatus(
           canTake: false,
           reason: 'ยังไม่ถึงระยะปลอดภัย กรุณารออีก $waitStr',
-          dosesTakenLast24Hours: countLast24h,
+          dosesTakenLast24Hours: countToday,
           maxDosesPerDay: config.maxDosesPerDay,
           nextAvailableAt: nextAvailable,
           remainingWait: remaining,
@@ -610,7 +1042,7 @@ class AppController extends ChangeNotifier {
     return PrnStatus(
       canTake: true,
       reason: 'พร้อมรับประทานเมื่อมีอาการ',
-      dosesTakenLast24Hours: countLast24h,
+      dosesTakenLast24Hours: countToday,
       maxDosesPerDay: config.maxDosesPerDay,
     );
   }
@@ -637,6 +1069,24 @@ class AppController extends ChangeNotifier {
     await _medications.saveIntake(intake);
     intakeHistory = await _medications.intakeHistory();
     slots = await _dispenser.slots();
+
+    // Sync PRN intake event to connected ESP32 so it records in 7-day history
+    if (bleService.isConnected && !bleService.isMock) {
+      final slot = slots.where((s) => s.drug?.id == drug.id).firstOrNull;
+      if (slot != null) {
+        try {
+          await bleService.recordIntake(
+            slot: slot.number,
+            qty: doseQuantity,
+            medicine: drug.name,
+            type: 'prn',
+          );
+        } catch (e) {
+          debugPrint('[BLE INTAKE] Error recording PRN intake to device: $e');
+        }
+      }
+    }
+
     notifyListeners();
   }
 

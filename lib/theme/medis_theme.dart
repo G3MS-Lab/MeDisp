@@ -235,6 +235,35 @@ abstract final class MeDisTheme {
           color: MeDisColors.primary,
           linearTrackColor: MeDisColors.border,
           circularTrackColor: MeDisColors.border),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith<Color>((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return const Color(0xFF94A3B8);
+          }
+          return Colors.white;
+        }),
+        trackColor: WidgetStateProperty.resolveWith<Color>((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return const Color(0xFFE2E8F0);
+          }
+          if (states.contains(WidgetState.selected)) {
+            return MeDisColors.success;
+          }
+          return const Color(0xFFCBD5E1);
+        }),
+        trackOutlineColor: WidgetStateProperty.resolveWith<Color>((states) {
+          if (states.contains(WidgetState.selected)) {
+            return Colors.transparent;
+          }
+          return const Color(0xFF94A3B8);
+        }),
+        trackOutlineWidth: WidgetStateProperty.resolveWith<double>((states) {
+          if (states.contains(WidgetState.selected)) {
+            return 0.0;
+          }
+          return 1.5;
+        }),
+      ),
     );
   }
 }

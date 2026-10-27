@@ -135,27 +135,44 @@ class PersistentMedicationRepository implements MedicationRepository {
           meal: meal,
           isPrn: isPrn,
           reason: json['reason'] as String?,
-          doses: doses
-              .where((dose) => knownDrugs.containsKey(dose['drug_id']))
-              .map((dose) => DrugDose(
-                  knownDrugs[dose['drug_id']]!, dose['quantity'] as int))
-              .toList());
+          doses: doses.map((dose) {
+            final drugId = dose['drug_id'] as String? ?? '';
+            final drug = knownDrugs[drugId] ??
+                Drug(
+                  id: drugId,
+                  name: (dose['drug_name'] as String?)?.isNotEmpty == true
+                      ? (dose['drug_name'] as String)
+                      : 'ยา',
+                  isPrn: isPrn,
+                );
+            return DrugDose(drug, (dose['quantity'] as int?) ?? 1);
+          }).toList());
     }).toList();
   }
 
   @override
   Future<void> saveIntake(IntakeRecord record) async {
     final values = await _list('intakes');
-    values.add({
+    final index = values.indexWhere((item) => item['id'] == record.id);
+    final entry = {
       'id': record.id,
       'taken_at': record.takenAt.toIso8601String(),
       'meal': record.meal?.name,
       'is_prn': record.isPrn,
       'reason': record.reason,
       'doses': record.doses
-          .map((dose) => {'drug_id': dose.drug.id, 'quantity': dose.quantity})
+          .map((dose) => {
+                'drug_id': dose.drug.id,
+                'drug_name': dose.drug.name,
+                'quantity': dose.quantity,
+              })
           .toList()
-    });
+    };
+    if (index >= 0) {
+      values[index] = entry;
+    } else {
+      values.add(entry);
+    }
     await _saveList('intakes', values);
   }
 
