@@ -4,6 +4,7 @@ import '../theme/medis_theme.dart';
 
 import '../application/app_scope.dart';
 import '../domain/models.dart';
+import '../widgets/ble_device_picker_sheet.dart';
 import '../widgets/medis_app_bar.dart';
 import '../widgets/medis_ui.dart';
 import 'drug_detail_screen.dart';
@@ -23,21 +24,60 @@ class DispenserScreen extends StatelessWidget {
           children: [
             Card(
               child: ListTile(
-                leading: Icon(Icons.bluetooth,
-                    color: controller.connected
-                        ? MeDisColors.success
-                        : MeDisColors.muted),
+                leading: Icon(
+                  Icons.bluetooth,
+                  color: controller.connected
+                      ? MeDisColors.success
+                      : MeDisColors.muted,
+                ),
                 title: Text(controller.connected
                     ? 'MeDispenser พร้อมใช้งาน'
                     : 'ยังไม่ได้เชื่อมต่อ'),
                 subtitle: Text(controller.connected
-                    ? 'สไลด์ยืนยันก่อนเพิ่มหรือแก้ไขยา'
+                    ? (controller.bleService.connectedDeviceName != null
+                        ? 'เชื่อมต่อกับ ${controller.bleService.connectedDeviceName}'
+                        : 'สไลด์ยืนยันก่อนเพิ่มหรือแก้ไขยา')
                     : 'เชื่อมต่อเครื่องก่อนเพิ่มหรือแก้ไขยา'),
                 trailing: Switch(
                     value: controller.connected,
+                    activeThumbColor: Colors.white,
+                    activeTrackColor: MeDisColors.success,
+                    inactiveThumbColor: Colors.white,
+                    inactiveTrackColor: const Color(0xFFCBD5E1),
+                    trackOutlineColor:
+                        WidgetStateProperty.resolveWith<Color>((states) {
+                      if (states.contains(WidgetState.selected)) {
+                        return Colors.transparent;
+                      }
+                      return const Color(0xFF94A3B8);
+                    }),
+                    trackOutlineWidth:
+                        WidgetStateProperty.resolveWith<double>((states) {
+                      if (states.contains(WidgetState.selected)) {
+                        return 0.0;
+                      }
+                      return 1.5;
+                    }),
+                    thumbIcon: WidgetStateProperty.resolveWith<Icon?>((states) {
+                      if (states.contains(WidgetState.selected)) {
+                        return const Icon(Icons.check,
+                            color: MeDisColors.success, size: 16);
+                      }
+                      return const Icon(Icons.close_rounded,
+                          color: Color(0xFF64748B), size: 16);
+                    }),
                     onChanged: controller.busy
                         ? null
-                        : (_) => controller.toggleConnection()),
+                        : (val) {
+                            if (val) {
+                              showBleDevicePickerSheet(
+                                context: context,
+                                controller: controller,
+                              );
+                            } else {
+                              controller.disconnectDispenser();
+                            }
+                          }),
               ),
             ),
             const SizedBox(height: 22),

@@ -22,4 +22,6 @@ class UnconfiguredDispenserRepository implements DispenserRepository {
       _missingProtocol();
   @override
   Future<void> clearSlot(int slotNumber) async => _missingProtocol();
+  @override
+  Future<void> updateSlotsFromDevice(List<DispenserSlot> slots) async {}
 }

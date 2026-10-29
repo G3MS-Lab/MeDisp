@@ -1,25 +1,36 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../domain/models.dart';
 import '../domain/repositories.dart';
 
+import 'ble_dispenser_service.dart';
+
 class PersistentDispenserRepository implements DispenserRepository {
-  PersistentDispenserRepository(this._auth);
+  PersistentDispenserRepository(this._auth, [BleDispenserService? ble])
+      : _ble = ble ?? BleDispenserService.instance;
+
   final AuthRepository _auth;
-  bool _connected = false;
+  final BleDispenserService _ble;
+  bool _mockConnected = false;
+
+  bool get _connected => _mockConnected || _ble.isConnected;
 
   String get _key => 'dispenser_slots_${_auth.currentUser?.id ?? 'anonymous'}';
 
   @override
   Future<bool> connect() async {
-    await Future<void>.delayed(const Duration(milliseconds: 350));
-    return _connected = true;
+    if (_ble.isConnected) return true;
+    return _mockConnected = true;
   }
 
   @override
-  Future<void> disconnect() async => _connected = false;
+  Future<void> disconnect() async {
+    _mockConnected = false;
+    await _ble.disconnect();
+  }
 
   @override
   Future<List<DispenserSlot>> slots() async {
@@ -75,9 +86,112 @@ class PersistentDispenserRepository implements DispenserRepository {
     await _save(values);
   }
 
-  Future<void> _save(List<DispenserSlot> values) async =>
-      (await SharedPreferences.getInstance())
-          .setString(_key, jsonEncode(values.map(_slotToJson).toList()));
+  @override
+  Future<void> updateSlotsFromDevice(List<DispenserSlot> values) async {
+    await (await SharedPreferences.getInstance())
+        .setString(_key, jsonEncode(values.map(_slotToJson).toList()));
+  }
+
+  Future<void> _save(List<DispenserSlot> values) async {
+    await (await SharedPreferences.getInstance())
+        .setString(_key, jsonEncode(values.map(_slotToJson).toList()));
+    if (!_ble.isConnected || _ble.isMock) return;
+    try {
+      // 1. Sync slots inventory first (await completion)
+      await _syncSlotsWithEsp32(values);
+      // Small pause between BLE writes to avoid GATT buffer collision
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      // 2. Sync schedule after slots are written (await completion)
+      await _syncScheduleWithEsp32(values);
+    } catch (e) {
+      debugPrint('[BLE SYNC] Error in _save sync: $e');
+    }
+  }
+
+  Future<void> _syncSlotsWithEsp32(List<DispenserSlot> values) async {
+    if (!_ble.isConnected || _ble.isMock) return;
+    try {
+      final slotsData = values
+          .map((slot) => {
+                'slot': slot.number,
+                'remaining': slot.remaining,
+                'drug': slot.drug?.name ?? '',
+                if (slot.capacity != 30) 'capacity': slot.capacity,
+                if (slot.drug != null) 'is_prn': slot.drug!.isPrn,
+                if (slot.drug != null && slot.drug!.isPrn) ...{
+                  'min_interval_hours':
+                      slot.drug!.prnConfig?.minIntervalHours ?? 4,
+                  'prn_qty': slot.drug!.prnConfig?.quantity ?? 1,
+                  'max_doses_per_day':
+                      slot.drug!.prnConfig?.maxDosesPerDay ?? 4,
+                },
+              })
+          .toList();
+
+      final payload = jsonEncode({'cmd': 'sync_slots', 'slots': slotsData});
+      final bytes = utf8.encode(payload);
+      if (bytes.length <= 480) {
+        await _ble.sendSlots(slotsData);
+        debugPrint('[BLE SYNC] ✓ sendSlots succeeded (${bytes.length} bytes)');
+      } else {
+        debugPrint(
+            '[BLE SYNC] Slots payload is large (${bytes.length} bytes > 480B). Splitting into batches...');
+        for (var i = 0; i < slotsData.length; i += 2) {
+          final batch = slotsData.sublist(
+              i, (i + 2 > slotsData.length) ? slotsData.length : i + 2);
+          await _ble.sendSlots(batch);
+          await Future<void>.delayed(const Duration(milliseconds: 60));
+        }
+        debugPrint('[BLE SYNC] ✓ sendSlots succeeded via batch splitting');
+      }
+    } catch (e) {
+      debugPrint('[BLE SYNC] ✗ sendSlots failed: $e');
+    }
+  }
+
+  Future<void> _syncScheduleWithEsp32(List<DispenserSlot> values) async {
+    if (!_ble.isConnected || _ble.isMock) return;
+    try {
+      for (final slot in values) {
+        final slotItems = <Map<String, dynamic>>[];
+        if (slot.drug != null && !slot.drug!.isPrn) {
+          final sortedInstructions =
+              List<DoseInstruction>.from(slot.drug!.instructions)
+                ..sort((a, b) => a.meal.index.compareTo(b.meal.index));
+          for (final instruction in sortedInstructions) {
+            final timeStr = switch (instruction.meal) {
+              MealType.breakfast => '08:00',
+              MealType.lunch => '12:00',
+              MealType.dinner => '18:00',
+              MealType.bedtime => '21:00',
+            };
+            slotItems.add({
+              'time': timeStr,
+              'slot': slot.number,
+              'medicine': slot.drug!.name.length > 36
+                  ? slot.drug!.name.substring(0, 36)
+                  : slot.drug!.name,
+              'qty': instruction.quantity,
+              'before_food': instruction.beforeFood,
+            });
+          }
+        }
+
+        final slotCmd = <String, dynamic>{
+          'cmd': 'set_slot_schedule',
+          'device_id': 'PD001',
+          'slot': slot.number,
+          'schedule': slotItems,
+        };
+
+        await _ble.sendCommand(slotCmd);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      debugPrint('[BLE SYNC] ✓ Synced per-slot schedule with ESP32');
+    } catch (e) {
+      debugPrint('[BLE SYNC] ✗ sendSchedule failed: $e');
+    }
+  }
 
   Map<String, dynamic> _slotToJson(DispenserSlot slot) => {
         'number': slot.number,

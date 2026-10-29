@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -62,6 +64,14 @@ class _MeDisAppState extends State<MeDisApp> {
         locale: const Locale('th'),
         supportedLocales: const [Locale('th'), Locale('en')],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        scrollBehavior: const MaterialScrollBehavior().copyWith(
+          dragDevices: {
+            PointerDeviceKind.mouse,
+            PointerDeviceKind.touch,
+            PointerDeviceKind.stylus,
+            PointerDeviceKind.trackpad,
+          },
+        ),
         builder: (context, child) {
           final content = MediaQuery(
             data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),

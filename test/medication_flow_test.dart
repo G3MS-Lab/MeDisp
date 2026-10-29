@@ -293,6 +293,12 @@ void main() {
     await expectLater(
         controller.completePrnIntake(prnDrug), throwsStateError);
 
+    // Midnight passes -> resets on the new day (2026-03-11 00:01)
+    currentTime = DateTime(2026, 3, 11, 0, 1);
+    final resetStatus = controller.checkPrnStatus(prnDrug);
+    expect(resetStatus.canTake, isTrue);
+    expect(resetStatus.dosesTakenLast24Hours, 0);
+
     // Adherence ignores PRN drug
     final report = const AdherenceService().calculate(
       period: AdherencePeriod.day,
