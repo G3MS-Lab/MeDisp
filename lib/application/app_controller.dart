@@ -76,6 +76,9 @@ class AppController extends ChangeNotifier {
     _setupBleEventListener();
     initialized = true;
     notifyListeners();
+
+    // Trigger auto-reconnect to last connected ESP32 dispenser if available
+    bleService.tryAutoConnectLastDevice();
   }
 
   Future<void> _loadUserData() async {

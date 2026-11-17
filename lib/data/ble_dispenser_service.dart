@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class BleDispenserService {
   BleDispenserService._();
@@ -12,6 +13,7 @@ class BleDispenserService {
   static const String statusCharUuid = '12345678-1234-1234-1234-123456789002';
   static const String responseCharUuid = '12345678-1234-1234-1234-123456789003';
   static const String expectedDeviceName = 'PillDispenser';
+  static const String _prefLastDeviceIdKey = 'ble_last_connected_device_id';
 
   BluetoothDevice? _connectedDevice;
   BluetoothCharacteristic? _configChar;
@@ -26,6 +28,11 @@ class BleDispenserService {
 
   bool _isMockConnected = false;
   String _lastStatusJson = '{"status":"ready"}';
+
+  // Auto-reconnect state
+  bool _manualDisconnect = false;
+  bool _isReconnecting = false;
+  Timer? _reconnectTimer;
 
   bool get isConnected =>
       _isMockConnected || (_connectedDevice != null && _statusChar != null);
@@ -97,8 +104,12 @@ class BleDispenserService {
     } catch (_) {}
   }
 
-  Future<bool> connect(BluetoothDevice device) async {
-    await disconnect();
+  Future<bool> connect(BluetoothDevice device, {bool isAutoReconnect = false}) async {
+    if (!isAutoReconnect) {
+      _stopAutoReconnect();
+      _manualDisconnect = false;
+      await disconnect(isInternal: true);
+    }
 
     debugPrint('[BLE] Connecting to ${device.platformName} (${device.remoteId})...');
     try {
@@ -165,6 +176,9 @@ class BleDispenserService {
 
       _connectedDevice = device;
 
+      // Persist connected device ID for auto-reconnect
+      _saveLastDeviceId(device.remoteId.str);
+
       // Subscribe to Response Notifications
       if (_responseChar != null) {
         try {
@@ -179,12 +193,16 @@ class BleDispenserService {
         }
       }
 
-      // Listen to disconnect events
+      // Listen to disconnect events and trigger auto-reconnect if unexpected
       _connectionStateSub = device.connectionState.listen((state) {
         if (state == BluetoothConnectionState.disconnected) {
-          debugPrint('[BLE] Device disconnected unexpectedly');
+          debugPrint('[BLE] Device disconnected (${device.remoteId.str})');
           _cleanup();
           _connectionChangeController.add(false);
+
+          if (!_manualDisconnect) {
+            _triggerAutoReconnect(device.remoteId.str);
+          }
         }
       });
 
@@ -192,6 +210,7 @@ class BleDispenserService {
       await readStatus();
 
       _isMockConnected = false;
+      _stopAutoReconnect();
       _connectionChangeController.add(true);
       return true;
     } catch (e) {
@@ -200,18 +219,179 @@ class BleDispenserService {
       try {
         await device.disconnect();
       } catch (_) {}
+      if (isAutoReconnect) {
+        return false;
+      }
       rethrow;
     }
   }
 
+  void _saveLastDeviceId(String id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefLastDeviceIdKey, id);
+    } catch (_) {}
+  }
+
+  Future<String?> getLastDeviceId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_prefLastDeviceIdKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _stopAutoReconnect() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _isReconnecting = false;
+  }
+
+  bool _isScanOperationActive = false;
+
+  /// Discovers target device via targeted scan to ensure Linux BlueZ / Android Bluetooth
+  /// cache resolves the peripheral before initiating connection.
+  Future<BluetoothDevice?> _scanForDevice(String targetId, {Duration timeout = const Duration(seconds: 4)}) async {
+    if (_isScanOperationActive) return null;
+    _isScanOperationActive = true;
+
+    try {
+      // 1. Check system devices first (already bonded/cached by BlueZ)
+      try {
+        final sysDevices = await getSystemDevices();
+        for (final d in sysDevices) {
+          if (d.remoteId.str.toUpperCase() == targetId.toUpperCase()) {
+            debugPrint('[BLE AUTO-RECONNECT] Found in system devices: $targetId');
+            return d;
+          }
+        }
+      } catch (_) {}
+
+      // 2. Ensure previous scan is safely stopped
+      try {
+        if (FlutterBluePlus.isScanningNow) {
+          await FlutterBluePlus.stopScan();
+          await Future.delayed(const Duration(milliseconds: 200));
+        }
+      } catch (_) {}
+
+      BluetoothDevice? matchedDevice;
+      StreamSubscription? sub;
+
+      sub = FlutterBluePlus.scanResults.listen((results) {
+        for (final r in results) {
+          if (r.device.remoteId.str.toUpperCase() == targetId.toUpperCase()) {
+            matchedDevice = r.device;
+            FlutterBluePlus.stopScan().catchError((_) {});
+            break;
+          }
+        }
+      });
+
+      // Avoid withServices on Linux BlueZ as it causes NoDiscoveryStarted on some BlueZ versions
+      await FlutterBluePlus.startScan(
+        timeout: timeout,
+        androidUsesFineLocation: true,
+      );
+
+      // Wait until scan finishes or device is found
+      final start = DateTime.now();
+      while (matchedDevice == null &&
+             FlutterBluePlus.isScanningNow &&
+             DateTime.now().difference(start) < timeout) {
+        await Future.delayed(const Duration(milliseconds: 150));
+      }
+
+      await sub.cancel();
+      try {
+        if (FlutterBluePlus.isScanningNow) {
+          await FlutterBluePlus.stopScan();
+        }
+      } catch (_) {}
+
+      return matchedDevice;
+    } catch (e) {
+      debugPrint('[BLE AUTO-RECONNECT] Scan error: $e');
+      return null;
+    } finally {
+      _isScanOperationActive = false;
+    }
+  }
+
+  void _triggerAutoReconnect(String deviceId) {
+    if (_manualDisconnect || _isReconnecting) return;
+    _isReconnecting = true;
+    debugPrint('[BLE AUTO-RECONNECT] Starting retry loop for device: $deviceId');
+
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer.periodic(const Duration(seconds: 6), (timer) async {
+      if (_manualDisconnect || isConnected) {
+        _stopAutoReconnect();
+        return;
+      }
+
+      try {
+        debugPrint('[BLE AUTO-RECONNECT] Scanning and attempting reconnect to $deviceId...');
+        final foundDevice = await _scanForDevice(deviceId, timeout: const Duration(seconds: 3));
+        if (foundDevice != null) {
+          debugPrint('[BLE AUTO-RECONNECT] Device found via scan! Connecting to ${foundDevice.remoteId.str}...');
+          final ok = await connect(foundDevice, isAutoReconnect: true);
+          if (ok) {
+            debugPrint('[BLE AUTO-RECONNECT] Reconnected successfully to $deviceId!');
+            _stopAutoReconnect();
+          }
+        } else {
+          debugPrint('[BLE AUTO-RECONNECT] Device not in range yet, will retry next cycle...');
+        }
+      } catch (e) {
+        debugPrint('[BLE AUTO-RECONNECT] Reconnect retry error: $e');
+      }
+    });
+  }
+
+  /// Automatically attempt reconnecting to the last paired device on app startup
+  Future<bool> tryAutoConnectLastDevice() async {
+    if (isConnected) return true;
+    final lastId = await getLastDeviceId();
+    if (lastId == null || lastId.isEmpty) {
+      debugPrint('[BLE AUTO-RECONNECT] No previous device found in storage');
+      return false;
+    }
+
+    debugPrint('[BLE AUTO-RECONNECT] Found saved device ID: $lastId. Scanning to resolve peripheral...');
+    try {
+      final foundDevice = await _scanForDevice(lastId, timeout: const Duration(seconds: 4));
+      if (foundDevice != null) {
+        debugPrint('[BLE AUTO-RECONNECT] Peripheral detected in advertising range. Connecting now...');
+        return await connect(foundDevice, isAutoReconnect: true);
+      } else {
+        debugPrint('[BLE AUTO-RECONNECT] Device not immediately detected in initial scan, starting background retry...');
+        _triggerAutoReconnect(lastId);
+        return false;
+      }
+    } catch (e) {
+      debugPrint('[BLE AUTO-RECONNECT] Initial connect to $lastId failed, background loop will continue: $e');
+      _triggerAutoReconnect(lastId);
+      return false;
+    }
+  }
+
   void connectMock() {
+    _stopAutoReconnect();
+    _manualDisconnect = false;
     _cleanup();
     _isMockConnected = true;
     _lastStatusJson = '{"device":"PD001_MOCK","status":"ready"}';
     _connectionChangeController.add(true);
   }
 
-  Future<void> disconnect() async {
+  Future<void> disconnect({bool isInternal = false}) async {
+    if (!isInternal) {
+      _manualDisconnect = true;
+      _stopAutoReconnect();
+    }
+
     if (_isMockConnected) {
       _isMockConnected = false;
       _connectionChangeController.add(false);
