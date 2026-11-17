@@ -765,12 +765,21 @@ void processIncomingCommand(const String &jsonPayload) {
   }
 
   String cmd = doc["cmd"] | doc["command"] | "";
+  String reqId = doc["req_id"] | "";
+
+  // 0. PING-PONG HEARTBEAT COMMAND
+  if (cmd == "ping") {
+    String res = "{\"event\":\"pong\",\"req_id\":\"" + reqId +
+                 "\",\"status\":\"ready\",\"time\":\"" + getFormattedTime() + "\"}";
+    sendBleEvent(res);
+    sendResponseNotification("success", "pong");
+    return;
+  }
 
   // 1a. DISPENSE COMMAND
-  if (cmd == "dispense") {
+  else if (cmd == "dispense") {
     int slot = doc["slot"] | 1;
     int qty = doc["qty"] | 1;
-    String reqId = doc["req_id"] | "";
     String med = doc["medicine"] | "";
     String type = doc["type"] | "";
     String schedTime = doc["sched_time"] | "";
@@ -816,7 +825,7 @@ void processIncomingCommand(const String &jsonPayload) {
       // Record to history buffer
       recordIntakeHistory(slot, qty, med, type.c_str(), status.c_str(), schedTime.c_str());
 
-      String eventJson = "{\"event\":\"INTAKE_RECORDED\",\"slot\":" + String(slot) +
+      String eventJson = "{\"event\":\"INTAKE_RECORDED\",\"req_id\":\"" + reqId + "\",\"slot\":" + String(slot) +
                          ",\"qty\":" + String(qty) +
                          ",\"medicine\":\"" + safeTruncateUtf8(med, 36) +
                          "\",\"type\":\"" + type +
@@ -824,6 +833,15 @@ void processIncomingCommand(const String &jsonPayload) {
                          "\",\"remaining\":" + String(gSlots[idx].remaining) +
                          ",\"time\":\"" + getFormattedTime() + "\"}";
       sendBleEvent(eventJson);
+
+      String dispEvent = "{\"event\":\"DISPENSE_SUCCESS\",\"req_id\":\"" + reqId + "\",\"slot\":" + String(slot) +
+                         ",\"qty\":" + String(qty) +
+                         ",\"medicine\":\"" + safeTruncateUtf8(med, 36) +
+                         "\",\"type\":\"" + type +
+                         "\",\"sched_time\":\"" + schedTime +
+                         "\",\"remaining\":" + String(gSlots[idx].remaining) + "\"}";
+      sendBleEvent(dispEvent);
+
       sendResponseNotification("success", "Intake recorded successfully");
     } else {
       sendResponseNotification("error", "Invalid slot");
@@ -834,7 +852,7 @@ void processIncomingCommand(const String &jsonPayload) {
     unsigned long epoch = doc["epoch"] | 0;
     if (epoch > 0) {
       setSystemEpoch(epoch);
-      String res = "{\"event\":\"TIME_SYNC_OK\",\"epoch\":" + String(epoch) +
+      String res = "{\"event\":\"TIME_SYNC_OK\",\"req_id\":\"" + reqId + "\",\"epoch\":" + String(epoch) +
                    ",\"time\":\"" + getFormattedTime() + "\"}";
       sendBleEvent(res);
       sendResponseNotification("success", "Time synchronized successfully");
@@ -846,7 +864,7 @@ void processIncomingCommand(const String &jsonPayload) {
   else if (cmd == "sync_slots") {
     parseAndApplySlots(jsonPayload);
     saveSlotsToStorage();
-    String eventJson = "{\"event\":\"SLOTS_SAVED\",\"status\":\"success\","
+    String eventJson = "{\"event\":\"SLOTS_SAVED\",\"req_id\":\"" + reqId + "\",\"status\":\"success\","
                        "\"time\":\"" + getFormattedTime() + "\"}";
     sendBleEvent(eventJson);
     sendResponseNotification("success", "Slots configuration saved");
@@ -1072,7 +1090,7 @@ void processIncomingCommand(const String &jsonPayload) {
       }
     }
 
-    sendBleEvent("{\"event\":\"HISTORY_SYNC_DONE\",\"status\":\"success\"}");
+    sendBleEvent("{\"event\":\"HISTORY_SYNC_DONE\",\"req_id\":\"" + reqId + "\",\"status\":\"success\"}");
     sendResponseNotification("success", "History sync finished");
   }
   // 7b. CLEAR HISTORY COMMAND (Preserves today's active records!)
@@ -1119,7 +1137,7 @@ void processIncomingCommand(const String &jsonPayload) {
     Serial.printf("[STORAGE] History cleared: %d purged, %d preserved (from %s onwards)\n",
                   clearedCount, keptCount, beforeDate.c_str());
 
-    String clearedEvent = "{\"event\":\"HISTORY_CLEARED\",\"status\":\"success\",\"preserved\":" + String(keptCount) + "}";
+    String clearedEvent = "{\"event\":\"HISTORY_CLEARED\",\"req_id\":\"" + reqId + "\",\"status\":\"success\",\"preserved\":" + String(keptCount) + "}";
     sendBleEvent(clearedEvent);
     sendResponseNotification("success", "Past history cleared");
   }
@@ -1174,6 +1192,8 @@ class StatusCharacteristicCallbacks : public NimBLECharacteristicCallbacks {
 class ServerCallbacks : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo) override {
     isBleClientConnected = true;
+    // Set fast BLE connection & supervision timeout (1.5s = 150 * 10ms) to detect killed app instantly
+    pServer->updateConnParams(connInfo.getConnHandle(), 16, 32, 0, 150);
     if (pStatusChar) {
       pStatusChar->setValue(buildDeviceStatusJson().c_str());
     }
