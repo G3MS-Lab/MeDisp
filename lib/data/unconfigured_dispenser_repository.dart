@@ -13,7 +13,7 @@ class UnconfiguredDispenserRepository implements DispenserRepository {
   Future<void> disconnect() async {}
   @override
   Future<List<DispenserSlot>> slots() async =>
-      List.generate(6, (index) => DispenserSlot(number: index + 1));
+      List.generate(12, (index) => DispenserSlot(number: index + 1));
   @override
   Future<void> fillSlot(int slotNumber, Drug drug, int quantity) async =>
       _missingProtocol();

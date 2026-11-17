@@ -407,17 +407,25 @@ class AppController extends ChangeNotifier {
       await bleService.syncTime();
       debugPrint('[BLE SYNC] ✓ Time sync sent successfully');
 
-      // 2. Read device status from ESP32
+      // 2. Read device status from ESP32 (fast snapshot)
       final statusJson = await bleService.readStatus();
       debugPrint('[BLE SYNC] Device status: $statusJson');
 
       if (statusJson != null && statusJson.trim().isNotEmpty) {
-        final statusData = jsonDecode(statusJson) as Map<String, dynamic>;
-        final deviceSlots = statusData['slots'] as List<dynamic>?;
-        if (deviceSlots != null && deviceSlots.isNotEmpty) {
-          await _syncSlotsFromDevice(deviceSlots);
+        try {
+          final statusData = jsonDecode(statusJson) as Map<String, dynamic>;
+          final deviceSlots = statusData['slots'] as List<dynamic>?;
+          if (deviceSlots != null && deviceSlots.isNotEmpty) {
+            await _syncSlotsFromDevice(deviceSlots);
+          }
+        } catch (e) {
+          debugPrint(
+              '[BLE SYNC] Warning: readStatus payload malformed or truncated: $e');
         }
       }
+
+      // 2b. Request streamed slot state from ESP32 (streams SLOT_STATE per slot - MTU safe)
+      await bleService.requestSlotsSync();
 
       // 3. Request active schedule from ESP32 (streams SLOT_SCHEDULE per slot)
       await bleService.requestScheduleSync();
@@ -449,8 +457,14 @@ class AppController extends ChangeNotifier {
     for (final d in deviceSlots) {
       if (d is! Map<String, dynamic>) continue;
       final slotNum = d['slot'] as int? ?? d['number'] as int?;
-      if (slotNum == null || slotNum < 1 || slotNum > currentSlots.length) {
+      if (slotNum == null || slotNum < 1) {
         continue;
+      }
+
+      // Auto-expand currentSlots if slotNum exceeds existing length
+      while (currentSlots.length < slotNum) {
+        currentSlots.add(DispenserSlot(number: currentSlots.length + 1));
+        changed = true;
       }
 
       final index = currentSlots.indexWhere((s) => s.number == slotNum);
@@ -843,6 +857,14 @@ class AppController extends ChangeNotifier {
 
         case 'SLOTS_SAVED':
           debugPrint('[BLE EVENT] ESP32 confirmed slots saved');
+          break;
+
+        case 'SLOT_STATE':
+        case 'SLOT_INFO':
+          final sNum = data['slot'] as int? ?? data['number'] as int?;
+          if (sNum != null) {
+            _syncSlotsFromDevice([data]);
+          }
           break;
 
         case 'SLOT_SCHEDULE':

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medisp/application/app_controller.dart';
@@ -394,6 +395,53 @@ void main() {
     expect(controller.slots[0].remaining, 9);
     expect(controller.slots[1].remaining, 8);
     expect(controller.intakeHistory.length, 2);
+  });
+
+  test('auto-migrates existing 6 slots to 12 slots seamlessly without data loss',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final auth = OfflineAuthRepository(MemoryAuthStorage());
+    await auth.initialize();
+    await auth.register(
+        name: 'Patient One',
+        email: 'patient@example.com',
+        password: 'securepass');
+    final preferences = await SharedPreferences.getInstance();
+    final key = 'dispenser_slots_${auth.currentUser?.id}';
+
+    // Simulate legacy storage with only 6 slots and an existing drug in slot 1
+    final legacySlots = List.generate(
+      6,
+      (i) => {
+        'number': i + 1,
+        'capacity': 30,
+        'remaining': i == 0 ? 15 : 0,
+        'drug': i == 0
+            ? {
+                'id': 'legacy-drug-1',
+                'name': 'Legacy Aspirin',
+                'notes': '',
+                'is_prn': false,
+                'instructions': [],
+              }
+            : null,
+      },
+    );
+    await preferences.setString(key, jsonEncode(legacySlots));
+
+    final repo = PersistentDispenserRepository(auth);
+
+    final migratedSlots = await repo.slots();
+    expect(migratedSlots.length, 12);
+    // Legacy drug in slot 1 is preserved
+    expect(migratedSlots[0].number, 1);
+    expect(migratedSlots[0].remaining, 15);
+    expect(migratedSlots[0].drug?.name, 'Legacy Aspirin');
+    // Slots 7 through 12 are properly created as empty slots
+    for (var i = 6; i < 12; i++) {
+      expect(migratedSlots[i].number, i + 1);
+      expect(migratedSlots[i].isEmpty, isTrue);
+    }
   });
 }
 

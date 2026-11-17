@@ -330,11 +330,11 @@ inline void cliHelp() {
   Serial.println("  clear data           : Factory reset (wipe slots, schedule & history)");
 
   Serial.println("\n[GROUP 5: MEDICATION & TIME CONFIGURATION] (Configure pills & system clock)");
-  Serial.println("  set slot <1-6> <med> [rem] [prn|meal] : Configure slot medication & stock");
+  Serial.println("  set slot <1-12> <med> [rem] [prn|meal] : Configure slot medication & stock");
   Serial.println("                                          Example: 'set slot 1 Paracetamol 10 meal'");
-  Serial.println("  set schedule <1-6> <HH:MM> [qty] [bf] : Set meal schedule time for slot");
+  Serial.println("  set schedule <1-12> <HH:MM> [qty] [bf] : Set meal schedule time for slot");
   Serial.println("                                          Example: 'set schedule 1 08:00 1 before'");
-  Serial.println("  set prn <1-6> <true|false>            : Toggle PRN mode for specific slot");
+  Serial.println("  set prn <1-12> <true|false>            : Toggle PRN mode for specific slot");
   Serial.println("  sync_time <epoch>                     : Manually set system Unix timestamp");
   Serial.println("  reboot                                : Restart ESP32-S3");
   Serial.println("================================================================================\n");
@@ -357,7 +357,7 @@ inline void cliDispense(const String &paramStr) {
     }
   }
   if (slot < 1 || slot > NUM_SLOTS) {
-    Serial.println("[CLI] Invalid slot number (1-6). Usage: dispense <slot> [qty]");
+    Serial.printf("[CLI] Invalid slot number (1-%d). Usage: dispense <slot> [qty]\n", NUM_SLOTS);
     return;
   }
   String err;
@@ -441,10 +441,10 @@ inline void cliSetSlot(const String &param) {
       }
       refreshCurrentNextionPage();
     } else {
-      Serial.println("[CLI] Invalid slot number (1-6)");
+      Serial.printf("[CLI] Invalid slot number (1-%d)\n", NUM_SLOTS);
     }
   } else {
-    Serial.println("[CLI] Usage: set slot <1-6> <drug_name> [remaining] [prn|meal]");
+    Serial.println("[CLI] Usage: set slot <1-12> <drug_name> [remaining] [prn|meal]");
   }
 }
 
@@ -468,12 +468,12 @@ inline void cliSetPrn(const String &param) {
 inline void cliSetSchedule(const String &param) {
   int s1 = param.indexOf(' ');
   if (s1 <= 0) {
-    Serial.println("[CLI] Usage: set schedule <1-6> <HH:MM> [qty] [before|after]");
+    Serial.println("[CLI] Usage: set schedule <1-12> <HH:MM> [qty] [before|after]");
     return;
   }
   int sNum = param.substring(0, s1).toInt();
   if (sNum < 1 || sNum > NUM_SLOTS) {
-    Serial.println("[CLI] Invalid slot number (1-6)");
+    Serial.printf("[CLI] Invalid slot number (1-%d)\n", NUM_SLOTS);
     return;
   }
   String rest = param.substring(s1 + 1);
@@ -542,7 +542,7 @@ inline void cliPrnStatus(const String &param) {
     Serial.printf("  Last Intake: %s, Next Allowed: %s\n", st.lastTakenTime.c_str(), st.nextAllowedTime.c_str());
     Serial.printf("  Indication: %s\n", getDrugIndication(s - 1).c_str());
   } else {
-    Serial.println("[CLI] Invalid slot number (1-6)");
+    Serial.printf("[CLI] Invalid slot number (1-%d)\n", NUM_SLOTS);
   }
 }
 

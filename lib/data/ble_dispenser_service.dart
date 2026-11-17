@@ -620,6 +620,12 @@ class BleDispenserService {
     return sendCommand({'cmd': 'get_schedule'});
   }
 
+  /// Request slots inventory sync from ESP32 (streams SLOT_STATE per slot - MTU safe)
+  Future<bool> requestSlotsSync() async {
+    debugPrint('[BLE SYNC] Requesting slots state sync from device');
+    return sendCommand({'cmd': 'get_slots'});
+  }
+
   /// Request intake history sync from ESP32 (all un-cleared days)
   Future<bool> requestHistorySync({int? dayOffset}) async {
     debugPrint(

@@ -27,7 +27,7 @@ inline String buildDeviceStatusJson() {
 #if ARDUINOJSON_VERSION_MAJOR >= 7
   JsonDocument doc;
 #else
-  DynamicJsonDocument doc(1024);
+  DynamicJsonDocument doc(2048);
 #endif
   doc["device_id"] = DEVICE_ID;
   doc["status"] = "ready";
@@ -40,8 +40,12 @@ inline String buildDeviceStatusJson() {
   for (int i = 0; i < NUM_SLOTS; i++) {
     JsonObject s = slotsArr.createNestedObject();
     s["slot"] = gSlots[i].number;
-    s["drug"] = gSlots[i].drugName;
     s["remaining"] = gSlots[i].remaining;
+    if (gSlots[i].drugName.length() > 0) {
+      s["drug"] = safeTruncateUtf8(gSlots[i].drugName, 28);
+    } else {
+      s["drug"] = "";
+    }
     if (gSlots[i].capacity != 30)
       s["capacity"] = gSlots[i].capacity;
     if (gSlots[i].drugId.length() > 0)
@@ -63,7 +67,7 @@ inline bool executeDispense(int slot, int qty, const String &medicine,
                             const String &reqId, String &outErrMsg, bool isScheduled,
                             const String &schedTime) {
   if (slot < 1 || slot > NUM_SLOTS) {
-    outErrMsg = "Invalid slot number (1-6)";
+    outErrMsg = "Invalid slot number (1-" + String(NUM_SLOTS) + ")";
     return false;
   }
 
@@ -341,13 +345,24 @@ inline void handleBleSyncSchedule(const JsonDocument &doc, const String &jsonPay
   refreshCurrentNextionPage();
 }
 
-// 5. STATUS QUERY COMMAND
+// 5. STATUS & SLOTS QUERY COMMAND (Streams slot state chunked per slot - MTU safe)
 inline void handleBleGetSlotsOrStatus() {
   String status = buildDeviceStatusJson();
   if (pStatusChar) {
     pStatusChar->setValue(status.c_str());
   }
-  sendResponseNotification("success", "Status updated");
+  for (int i = 0; i < NUM_SLOTS; i++) {
+    String slotEvent = "{\"event\":\"SLOT_STATE\",\"slot\":" + String(gSlots[i].number) +
+                       ",\"remaining\":" + String(gSlots[i].remaining) +
+                       ",\"drug\":\"" + gSlots[i].drugName + "\"" +
+                       (gSlots[i].isPrn ? ",\"is_prn\":true,\"min_interval_hours\":" + String(gSlots[i].minIntervalHours) +
+                                          ",\"prn_qty\":" + String(gSlots[i].prnQty) +
+                                          ",\"max_doses_per_day\":" + String(gSlots[i].maxDosesPerDay) : "") +
+                       "}";
+    sendBleEvent(slotEvent);
+    vTaskDelay(pdMS_TO_TICKS(20));
+  }
+  sendResponseNotification("success", "Slots and status updated");
 }
 
 // 6. FULL SYNC DATA COMMAND
