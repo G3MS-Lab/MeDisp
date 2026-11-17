@@ -30,6 +30,8 @@ class AppController extends ChangeNotifier {
   AppUser? user;
   String? errorMessage;
   bool busy = false;
+  bool isSyncing = false;
+  bool isDispensing = false;
   List<DispenserSlot> slots = const [];
   List<Drug> drugs = const [];
   List<AllergyRecord> allergies = const [];
@@ -70,6 +72,8 @@ class AppController extends ChangeNotifier {
       } else if (!isConn) {
         _stopPeriodicTimeSync();
         _initialSyncDone = false;
+        isSyncing = false;
+        isDispensing = false;
       }
       notifyListeners();
     });
@@ -393,6 +397,8 @@ class AppController extends ChangeNotifier {
   /// 4. Pulls 7-day intake history from ESP32 to reconcile intake status
   Future<void> _performInitialSync() async {
     if (_initialSyncDone) return;
+    isSyncing = true;
+    notifyListeners();
     debugPrint(
         '[BLE SYNC] Performing initial BLE sync on connection (ESP32 -> App)...');
 
@@ -421,11 +427,13 @@ class AppController extends ChangeNotifier {
         await _syncScheduleFromDevice(scheduleJson);
       }
 
-      // 4. Request 7-day intake history sync from ESP32 (source of truth for last 7 days)
+      // 4. Request intake history sync from ESP32 (source of truth for un-cleared days)
       await bleService.requestHistorySync();
-      debugPrint('[BLE SYNC] ✓ Requested 7-day history sync from ESP32');
+      debugPrint('[BLE SYNC] ✓ Requested history sync from ESP32');
     } catch (e) {
       debugPrint('[BLE SYNC] Initial sync error: $e');
+      isSyncing = false;
+      notifyListeners();
     }
 
     _initialSyncDone = true;
@@ -786,6 +794,8 @@ class AppController extends ChangeNotifier {
 
         case 'HISTORY_CLEARED':
           debugPrint('[BLE EVENT] ESP32 cleared past history records (kept today)');
+          isSyncing = false;
+          notifyListeners();
           break;
 
         case 'INTAKE_RECORDED':
@@ -943,58 +953,66 @@ class AppController extends ChangeNotifier {
     if (MealSchedule.current(todayMeals, now)?.type != type) {
       throw StateError('กดทานแล้วได้เฉพาะมื้อปัจจุบันเท่านั้น');
     }
-    final dosesToConsume = doses ?? meal.drugs;
-    await _dispenser.consume(
-        {for (final dose in dosesToConsume) dose.drug.id: dose.quantity});
-    final intake = IntakeRecord(
-        id: now.microsecondsSinceEpoch.toString(),
-        takenAt: now,
-        meal: type,
-        doses: dosesToConsume);
-    await _medications.saveIntake(intake);
-    intakeHistory = await _medications.intakeHistory();
-    slots = await _dispenser.slots();
 
-    // Sync intake event to connected ESP32 so it records in 7-day history & updates schedule status
-    if (bleService.isConnected && !bleService.isMock) {
-      final hourStr = meal.time.hour.toString().padLeft(2, '0');
-      final minuteStr = meal.time.minute.toString().padLeft(2, '0');
-      final schedTime = '$hourStr:$minuteStr';
+    isDispensing = true;
+    notifyListeners();
+    try {
+      final dosesToConsume = doses ?? meal.drugs;
+      await _dispenser.consume(
+          {for (final dose in dosesToConsume) dose.drug.id: dose.quantity});
+      final intake = IntakeRecord(
+          id: now.microsecondsSinceEpoch.toString(),
+          takenAt: now,
+          meal: type,
+          doses: dosesToConsume);
+      await _medications.saveIntake(intake);
+      intakeHistory = await _medications.intakeHistory();
+      slots = await _dispenser.slots();
 
-      for (final dose in dosesToConsume) {
-        final slot =
-            slots.where((s) => s.drug?.id == dose.drug.id).firstOrNull;
-        if (slot != null) {
-          try {
-            await bleService.recordIntake(
-              slot: slot.number,
-              qty: dose.quantity,
-              medicine: dose.drug.name,
-              type: 'meal',
-              schedTime: schedTime,
-            );
-          } catch (e) {
-            debugPrint('[BLE INTAKE] Error recording intake to device: $e');
+      // Sync intake event to connected ESP32 so it records in history & updates schedule status
+      if (bleService.isConnected && !bleService.isMock) {
+        final hourStr = meal.time.hour.toString().padLeft(2, '0');
+        final minuteStr = meal.time.minute.toString().padLeft(2, '0');
+        final schedTime = '$hourStr:$minuteStr';
+
+        for (final dose in dosesToConsume) {
+          final slot =
+              slots.where((s) => s.drug?.id == dose.drug.id).firstOrNull;
+          if (slot != null) {
+            try {
+              await bleService.recordIntake(
+                slot: slot.number,
+                qty: dose.quantity,
+                medicine: dose.drug.name,
+                type: 'meal',
+                schedTime: schedTime,
+              );
+            } catch (e) {
+              debugPrint('[BLE INTAKE] Error recording intake to device: $e');
+            }
           }
         }
       }
-    }
 
-    final today = now;
-    final todayIntakeDrugIds = intakeHistory
-        .where((record) =>
-            !record.isPrn &&
-            record.meal == type &&
-            DateUtils.isSameDay(record.takenAt, today))
-        .expand((record) => record.doses.map((d) => d.drug.id))
-        .toSet();
-    final allCompleted =
-        meal.drugs.every((dose) => todayIntakeDrugIds.contains(dose.drug.id));
-    if (allCompleted) {
-      todayMeals[index] =
-          todayMeals[index].copyWith(completed: true, completedAt: now);
+      final today = now;
+      final todayIntakeDrugIds = intakeHistory
+          .where((record) =>
+              !record.isPrn &&
+              record.meal == type &&
+              DateUtils.isSameDay(record.takenAt, today))
+          .expand((record) => record.doses.map((d) => d.drug.id))
+          .toSet();
+      final allCompleted =
+          meal.drugs.every((dose) => todayIntakeDrugIds.contains(dose.drug.id));
+      if (allCompleted) {
+        todayMeals[index] =
+            todayMeals[index].copyWith(completed: true, completedAt: now);
+      }
+      notifyListeners();
+    } finally {
+      isDispensing = false;
+      notifyListeners();
     }
-    notifyListeners();
   }
 
   PrnStatus checkPrnStatus(Drug drug) {
@@ -1072,40 +1090,47 @@ class AppController extends ChangeNotifier {
       throw StateError(status.reason);
     }
 
-    final doseQuantity = quantity ?? drug.prnConfig?.quantity ?? 1;
-    final now = _now();
+    isDispensing = true;
+    notifyListeners();
+    try {
+      final doseQuantity = quantity ?? drug.prnConfig?.quantity ?? 1;
+      final now = _now();
 
-    await _dispenser.consume({drug.id: doseQuantity});
-    final intake = IntakeRecord(
-      id: now.microsecondsSinceEpoch.toString(),
-      takenAt: now,
-      meal: null,
-      isPrn: true,
-      reason: reason ?? drug.prnConfig?.symptom,
-      doses: [DrugDose(drug, doseQuantity)],
-    );
-    await _medications.saveIntake(intake);
-    intakeHistory = await _medications.intakeHistory();
-    slots = await _dispenser.slots();
+      await _dispenser.consume({drug.id: doseQuantity});
+      final intake = IntakeRecord(
+        id: now.microsecondsSinceEpoch.toString(),
+        takenAt: now,
+        meal: null,
+        isPrn: true,
+        reason: reason ?? drug.prnConfig?.symptom,
+        doses: [DrugDose(drug, doseQuantity)],
+      );
+      await _medications.saveIntake(intake);
+      intakeHistory = await _medications.intakeHistory();
+      slots = await _dispenser.slots();
 
-    // Sync PRN intake event to connected ESP32 so it records in 7-day history
-    if (bleService.isConnected && !bleService.isMock) {
-      final slot = slots.where((s) => s.drug?.id == drug.id).firstOrNull;
-      if (slot != null) {
-        try {
-          await bleService.recordIntake(
-            slot: slot.number,
-            qty: doseQuantity,
-            medicine: drug.name,
-            type: 'prn',
-          );
-        } catch (e) {
-          debugPrint('[BLE INTAKE] Error recording PRN intake to device: $e');
+      // Sync PRN intake event to connected ESP32 so it records in history
+      if (bleService.isConnected && !bleService.isMock) {
+        final slot = slots.where((s) => s.drug?.id == drug.id).firstOrNull;
+        if (slot != null) {
+          try {
+            await bleService.recordIntake(
+              slot: slot.number,
+              qty: doseQuantity,
+              medicine: drug.name,
+              type: 'prn',
+            );
+          } catch (e) {
+            debugPrint('[BLE INTAKE] Error recording PRN intake to device: $e');
+          }
         }
       }
-    }
 
-    notifyListeners();
+      notifyListeners();
+    } finally {
+      isDispensing = false;
+      notifyListeners();
+    }
   }
 
   Future<void> clearSlot(int slotNumber) async {

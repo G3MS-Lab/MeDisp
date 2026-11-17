@@ -26,6 +26,14 @@ class BleDispenserService {
   final _connectionChangeController = StreamController<bool>.broadcast();
   final _responseController = StreamController<String>.broadcast();
 
+  // Ping-Pong correlation table & sequence counter
+  int _reqCounter = 0;
+  String _generateReqId() {
+    _reqCounter = (_reqCounter + 1) % 100000;
+    return 'r$_reqCounter';
+  }
+  final Map<String, Completer<Map<String, dynamic>>> _pendingRequests = {};
+
   bool _isMockConnected = false;
   String _lastStatusJson = '{"status":"ready"}';
 
@@ -85,8 +93,21 @@ class BleDispenserService {
 
   Future<void> startScan({Duration timeout = const Duration(seconds: 10)}) async {
     try {
-      if (await FlutterBluePlus.isScanning.first) {
+      // 1. Wait for Bluetooth adapter to settle from 'unknown' or 'turningOn' on app launch
+      final state = await FlutterBluePlus.adapterState
+          .where((s) => s != BluetoothAdapterState.unknown && s != BluetoothAdapterState.turningOn)
+          .first
+          .timeout(const Duration(seconds: 3), onTimeout: () => FlutterBluePlus.adapterStateNow);
+
+      if (state != BluetoothAdapterState.on) {
+        debugPrint('[BLE] Cannot start scan: Bluetooth adapter is $state');
+        throw Exception('กรุณาเปิด Bluetooth ก่อนเริ่มค้นหา');
+      }
+
+      // 2. Ensure previous scan is safely stopped before initiating a new one
+      if (FlutterBluePlus.isScanningNow) {
         await FlutterBluePlus.stopScan();
+        await Future.delayed(const Duration(milliseconds: 200));
       }
       await FlutterBluePlus.startScan(
         timeout: timeout,
@@ -187,6 +208,7 @@ class BleDispenserService {
             final payload = utf8.decode(bytes);
             debugPrint('[BLE NOTIFY RECV] $payload');
             _responseController.add(payload);
+            _resolvePendingAck(payload);
           });
         } catch (e) {
           debugPrint('[BLE] Failed to subscribe to response notify: $e');
@@ -257,6 +279,16 @@ class BleDispenserService {
     _isScanOperationActive = true;
 
     try {
+      // 0. Wait for Bluetooth adapter to be ready (settle from 'unknown' at app startup)
+      final state = await FlutterBluePlus.adapterState
+          .where((s) => s != BluetoothAdapterState.unknown && s != BluetoothAdapterState.turningOn)
+          .first
+          .timeout(const Duration(seconds: 3), onTimeout: () => FlutterBluePlus.adapterStateNow);
+      if (state != BluetoothAdapterState.on) {
+        debugPrint('[BLE AUTO-RECONNECT] Adapter is $state, skipping background scan');
+        return null;
+      }
+
       // 1. Check system devices first (already bonded/cached by BlueZ)
       try {
         final sysDevices = await getSystemDevices();
@@ -452,24 +484,108 @@ class BleDispenserService {
     }
   }
 
+  /// Match incoming response with pending Ping-Pong request completer
+  void _resolvePendingAck(String payload) {
+    try {
+      final decoded = jsonDecode(payload);
+      if (decoded is Map<String, dynamic>) {
+        final reqId = decoded['req_id'] as String?;
+        if (reqId != null && _pendingRequests.containsKey(reqId)) {
+          final completer = _pendingRequests.remove(reqId);
+          if (completer != null && !completer.isCompleted) {
+            completer.complete(decoded);
+          }
+        }
+      }
+    } catch (_) {
+      // Non-JSON or malformed payload, ignore
+    }
+  }
+
   /// Send a generic JSON command to ESP32 via Config characteristic
   Future<bool> sendCommand(Map<String, dynamic> command) async {
+    final cmdMap = Map<String, dynamic>.from(command);
+    cmdMap['req_id'] ??= _generateReqId();
+
     if (_isMockConnected) {
-      debugPrint('[BLE MOCK] Sent command: ${command['cmd']}');
+      debugPrint('[BLE MOCK] Sent command: ${cmdMap['cmd']} (${cmdMap['req_id']})');
       return true;
     }
     if (_configChar == null) {
       throw StateError('ยังไม่ได้เชื่อมต่อเครื่องจ่ายยา');
     }
     try {
-      final payload = jsonEncode(command);
+      final payload = jsonEncode(cmdMap);
       final bytes = utf8.encode(payload);
       await _configChar!.write(bytes, withoutResponse: false);
-      debugPrint('[BLE] Sent command: ${command['cmd']} (${bytes.length} bytes)');
+      debugPrint('[BLE] Sent command: ${cmdMap['cmd']} (${bytes.length} bytes, req_id: ${cmdMap['req_id']})');
       return true;
     } catch (e) {
       debugPrint('[BLE] Send command error: $e');
       rethrow;
+    }
+  }
+
+  /// Send command with explicit Ping-Pong Acknowledgment (waiting for matching req_id)
+  Future<Map<String, dynamic>> sendCommandWithAck(
+    Map<String, dynamic> command, {
+    Duration timeout = const Duration(seconds: 5),
+    String? expectedEvent,
+  }) async {
+    final cmdMap = Map<String, dynamic>.from(command);
+    final reqId = (cmdMap['req_id'] as String?) ?? _generateReqId();
+    cmdMap['req_id'] = reqId;
+
+    if (_isMockConnected) {
+      debugPrint('[BLE MOCK] Sent command with ACK: ${cmdMap['cmd']} ($reqId)');
+      return {
+        'event': expectedEvent ?? 'pong',
+        'req_id': reqId,
+        'status': 'success',
+        'result': 'success',
+      };
+    }
+
+    if (_configChar == null) {
+      throw StateError('ยังไม่ได้เชื่อมต่อเครื่องจ่ายยา');
+    }
+
+    final completer = Completer<Map<String, dynamic>>();
+    _pendingRequests[reqId] = completer;
+
+    try {
+      final payload = jsonEncode(cmdMap);
+      final bytes = utf8.encode(payload);
+      await _configChar!.write(bytes, withoutResponse: false);
+      debugPrint('[BLE] Sent command with ACK: ${cmdMap['cmd']} ($reqId, ${bytes.length} bytes)');
+
+      return await completer.future.timeout(
+        timeout,
+        onTimeout: () {
+          _pendingRequests.remove(reqId);
+          throw TimeoutException(
+            'ตู้ยาไม่ตอบสนองตามเวลาที่กำหนด (${cmdMap['cmd']})',
+            timeout,
+          );
+        },
+      );
+    } catch (e) {
+      _pendingRequests.remove(reqId);
+      debugPrint('[BLE] sendCommandWithAck error ($reqId): $e');
+      rethrow;
+    }
+  }
+
+  /// Heartbeat ping to verify ESP32 is alive and ready
+  Future<bool> ping({Duration timeout = const Duration(seconds: 3)}) async {
+    try {
+      final res = await sendCommandWithAck({'cmd': 'ping'},
+          timeout: timeout, expectedEvent: 'pong');
+      return res['status'] == 'ready' ||
+          res['status'] == 'success' ||
+          res['event'] == 'pong';
+    } catch (_) {
+      return false;
     }
   }
 
@@ -574,5 +690,15 @@ class BleDispenserService {
     _statusChar = null;
     _responseChar = null;
     _isMockConnected = false;
+
+    // Reject any pending Ping-Pong requests immediately on disconnect
+    for (final completer in _pendingRequests.values) {
+      if (!completer.isCompleted) {
+        completer.completeError(
+          StateError('การเชื่อมต่อกับเครื่องจ่ายยาขาดหาย'),
+        );
+      }
+    }
+    _pendingRequests.clear();
   }
 }

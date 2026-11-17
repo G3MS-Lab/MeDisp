@@ -1562,7 +1562,7 @@ class _PrnDrugCardState extends State<_PrnDrugCard> {
           height: 48,
           child: FilledButton.icon(
             key: Key('receive-prn-${slot.number}'),
-            onPressed: (controller.connected && !dispensing && available)
+            onPressed: (controller.connected && !dispensing && !controller.isDispensing && available)
                 ? () async {
                     final confirmed =
                         await _confirmPrnMedicine(context, drug, slot);

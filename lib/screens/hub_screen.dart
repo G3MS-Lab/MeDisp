@@ -123,7 +123,7 @@ class HubScreen extends StatelessWidget {
                             .bodySmall
                             ?.copyWith(color: MeDisColors.muted)),
                   ])),
-              if (controller.busy)
+              if (controller.busy || controller.isSyncing)
                 const SizedBox.square(
                     dimension: 20,
                     child: CircularProgressIndicator(strokeWidth: 2)),
@@ -133,11 +133,13 @@ class HubScreen extends StatelessWidget {
                 width: double.infinity,
                 child: controller.connected
                     ? OutlinedButton.icon(
-                        onPressed: controller.busy
+                        onPressed: (controller.busy || controller.isSyncing)
                             ? null
                             : controller.disconnectDispenser,
                         icon: const Icon(Icons.bluetooth_connected, size: 20),
-                        label: const Text('ตัดการเชื่อมต่อ'))
+                        label: Text(controller.isSyncing
+                            ? 'กำลังซิงค์ข้อมูล...'
+                            : 'ตัดการเชื่อมต่อ'))
                     : FilledButton.icon(
                         onPressed: controller.busy
                             ? null

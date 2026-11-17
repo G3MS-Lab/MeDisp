@@ -100,7 +100,7 @@ class DispenserScreen extends StatelessWidget {
                     SizedBox(
                       width: cardWidth,
                       child:
-                          _SlotCard(slot: slot, enabled: controller.connected),
+                          _SlotCard(slot: slot, enabled: controller.connected && !controller.isSyncing && !controller.isDispensing),
                     ),
                 ],
               );

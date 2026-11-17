@@ -30,11 +30,13 @@ class DiscoveredBleEntry {
   final BluetoothDevice device;
   final int? rssi;
   final bool isSystemDevice;
+  final AdvertisementData? advertisementData;
 
   const DiscoveredBleEntry({
     required this.device,
     this.rssi,
     this.isSystemDevice = false,
+    this.advertisementData,
   });
 }
 
@@ -42,7 +44,9 @@ class _BleDevicePickerSheetState extends State<BleDevicePickerSheet> {
   final BleDispenserService _ble = BleDispenserService.instance;
   BluetoothDevice? _connectingDevice;
   String? _errorMessage;
+  String? _lastRememberedDeviceId;
   StreamSubscription<List<ScanResult>>? _scanSub;
+  StreamSubscription<BluetoothAdapterState>? _adapterSub;
   final Map<String, DiscoveredBleEntry> _devices = {};
   bool _isScanning = false;
 
@@ -81,10 +85,11 @@ class _BleDevicePickerSheetState extends State<BleDevicePickerSheet> {
       return;
     }
 
-    final state = await _ble.adapterState;
-    if (state != BluetoothAdapterState.on && mounted) {
+    // Load remembered/paired device from persistent storage
+    final savedId = await _ble.getLastDeviceId();
+    if (mounted) {
       setState(() {
-        _errorMessage = 'กรุณาเปิด Bluetooth ก่อนเริ่มค้นหา';
+        _lastRememberedDeviceId = savedId;
       });
     }
 
@@ -99,6 +104,7 @@ class _BleDevicePickerSheetState extends State<BleDevicePickerSheet> {
               device: r.device,
               rssi: r.rssi,
               isSystemDevice: false,
+              advertisementData: r.advertisementData,
             );
           }
         });
@@ -113,7 +119,45 @@ class _BleDevicePickerSheetState extends State<BleDevicePickerSheet> {
       }
     });
 
-    _startScan();
+    // Reactive adapter listener: automatically starts scan when adapter turns ON
+    // (Resolves initial launch race condition when adapter starts as 'unknown')
+    _adapterSub = FlutterBluePlus.adapterState.listen((state) {
+      if (!mounted) return;
+      if (state == BluetoothAdapterState.on) {
+        setState(() {
+          _errorMessage = null;
+        });
+        if (!_isScanning && _devices.isEmpty) {
+          _startScan();
+        }
+      } else if (state == BluetoothAdapterState.off) {
+        setState(() {
+          _errorMessage = 'กรุณาเปิด Bluetooth ก่อนเริ่มค้นหา';
+        });
+      }
+    });
+
+    // Wait for initial adapter state to settle from 'unknown' or 'turningOn'
+    try {
+      final state = await FlutterBluePlus.adapterState
+          .where((s) => s != BluetoothAdapterState.unknown && s != BluetoothAdapterState.turningOn)
+          .first
+          .timeout(const Duration(seconds: 3), onTimeout: () => FlutterBluePlus.adapterStateNow);
+
+      if (state == BluetoothAdapterState.on) {
+        if (mounted) {
+          _startScan();
+        }
+      } else if (mounted) {
+        setState(() {
+          _errorMessage = 'กรุณาเปิด Bluetooth ก่อนเริ่มค้นหา';
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        _startScan();
+      }
+    }
   }
 
   Future<void> _startScan() async {
@@ -200,22 +244,97 @@ class _BleDevicePickerSheetState extends State<BleDevicePickerSheet> {
 
   @override
   void dispose() {
+    _adapterSub?.cancel();
     _scanSub?.cancel();
     _ble.stopScan();
     super.dispose();
   }
 
+  String _getDeviceDisplayName(DiscoveredBleEntry entry) {
+    if (entry.device.platformName.isNotEmpty) {
+      return entry.device.platformName;
+    }
+    if (entry.advertisementData != null && entry.advertisementData!.advName.isNotEmpty) {
+      return entry.advertisementData!.advName;
+    }
+    if (entry.device.advName.isNotEmpty) {
+      return entry.device.advName;
+    }
+    final hasPillService = entry.advertisementData?.serviceUuids.any(
+      (u) => u.toString().toLowerCase().contains('12345678-1234-1234-1234-123456789000'),
+    ) ?? false;
+    if (hasPillService) {
+      return 'PillDispenser';
+    }
+    final mac = entry.device.remoteId.str.toUpperCase();
+    if (mac.startsWith('CC:68:C7') || mac.startsWith('30:30:F9') || mac.startsWith('40:22:D8') || mac.startsWith('48:27:E2')) {
+      return 'PillDispenser (MeDisP)';
+    }
+    return '';
+  }
+
+  // ==========================================================================
+  // [CUSTOMIZE HERE / เปลี่ยนตรงนี้ให้เครื่องรู้เป็นเครื่องจ่ายยา]:
+  // Recognition criteria for MeDisP Pill Dispenser hardware.
+  // Modify or extend any of the 3 checks below to match your hardware:
+  //
+  // 1. BLE Broadcast Device Name (case-insensitive):
+  //    Default checks for 'pill' or 'medis' (e.g. 'PillDispenser', 'MeDisP_S3').
+  //
+  // 2. Custom BLE Service UUID (from MeDisP_Config.h):
+  //    Default: '12345678-1234-1234-1234-123456789000'.
+  //
+  // 3. Hardware MAC Address Prefix / OUI:
+  //    Espressif ESP32-S3 factory OUI prefixes (e.g. 'CC:68:C7', '30:30:F9').
+  //    You can add your specific board's MAC prefix here if needed!
+  // ==========================================================================
+  bool _isMeDisPDevice(DiscoveredBleEntry entry) {
+    // Check 1: Match by advertised device name
+    final name = _getDeviceDisplayName(entry).toLowerCase();
+    if (name.contains('pill') || name.contains('medis')) return true;
+
+    // Check 2: Match by Custom Pill Dispenser Service UUID
+    final hasPillService = entry.advertisementData?.serviceUuids.any(
+      (u) => u.toString().toLowerCase().contains('12345678-1234-1234-1234-123456789000'),
+    ) ?? false;
+    if (hasPillService) return true;
+
+    // Check 3: Match by ESP32-S3 MAC Vendor Prefix (OUI)
+    final mac = entry.device.remoteId.str.toUpperCase();
+    if (mac.startsWith('CC:68:C7') ||
+        mac.startsWith('30:30:F9') ||
+        mac.startsWith('40:22:D8') ||
+        mac.startsWith('48:27:E2')) {
+      return true;
+    }
+
+    return false;
+  }
+
+  // ==========================================================================
+  // [HIGHLIGHT 1]: Check if this device was previously connected / remembered
+  // ==========================================================================
+  bool _isRemembered(DiscoveredBleEntry entry) {
+    if (_lastRememberedDeviceId == null || _lastRememberedDeviceId!.isEmpty) return false;
+    return _lastRememberedDeviceId!.toLowerCase() == entry.device.remoteId.str.toLowerCase();
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Sort devices: PillDispenser / MeDis first, then named devices, then MAC
+    // Sort devices: 1) Remembered & Dispenser, 2) Dispenser, 3) Remembered, 4) Named, 5) RSSI
     final sortedList = _devices.values.toList();
     sortedList.sort((a, b) {
-      final aName = a.device.platformName.toLowerCase();
-      final bName = b.device.platformName.toLowerCase();
-      final aIsPill = aName.contains('pill') || aName.contains('medis');
-      final bIsPill = bName.contains('pill') || bName.contains('medis');
-      if (aIsPill && !bIsPill) return -1;
-      if (!aIsPill && bIsPill) return 1;
+      final aIsRemembered = _isRemembered(a);
+      final bIsRemembered = _isRemembered(b);
+      final aIsPill = _isMeDisPDevice(a);
+      final bIsPill = _isMeDisPDevice(b);
+
+      final aScore = (aIsRemembered ? 2 : 0) + (aIsPill ? 1 : 0);
+      final bScore = (bIsRemembered ? 2 : 0) + (bIsPill ? 1 : 0);
+      if (aScore != bScore) return bScore.compareTo(aScore);
+
+      final aName = _getDeviceDisplayName(a).toLowerCase();
+      final bName = _getDeviceDisplayName(b).toLowerCase();
       if (aName.isNotEmpty && bName.isEmpty) return -1;
       if (aName.isEmpty && bName.isNotEmpty) return 1;
       final aRssi = a.rssi ?? -100;
@@ -390,90 +509,156 @@ class _BleDevicePickerSheetState extends State<BleDevicePickerSheet> {
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (context, index) {
                       final item = sortedList[index];
-                      final name = item.device.platformName;
-                      final isPillDispenser = name.toLowerCase().contains('pill') ||
-                          name.toLowerCase().contains('medis');
+                      final name = _getDeviceDisplayName(item);
+                      final isPillDispenser = _isMeDisPDevice(item);
+                      final isRemembered = _isRemembered(item);
                       final isConnectingThis =
                           _connectingDevice?.remoteId == item.device.remoteId;
 
+                      // Highlight styling: Pill Dispenser (Teal) vs Remembered (Amber/Gold)
+                      final Color cardBg;
+                      final Border cardBorder;
+                      if (isPillDispenser && isRemembered) {
+                        cardBg = MeDisColors.primarySoft.withValues(alpha: 0.7);
+                        cardBorder = Border.all(color: MeDisColors.primary, width: 2.0);
+                      } else if (isPillDispenser) {
+                        cardBg = MeDisColors.primarySoft.withValues(alpha: 0.45);
+                        cardBorder = Border.all(color: MeDisColors.primary.withValues(alpha: 0.6), width: 1.5);
+                      } else if (isRemembered) {
+                        cardBg = MeDisColors.warningSoft.withValues(alpha: 0.5);
+                        cardBorder = Border.all(color: MeDisColors.warning.withValues(alpha: 0.6), width: 1.5);
+                      } else {
+                        cardBg = MeDisColors.background;
+                        cardBorder = Border.all(color: MeDisColors.border, width: 1.0);
+                      }
+
+                      // Leading icon based on highlight state
+                      final Color avatarBg;
+                      final IconData avatarIcon;
+                      final Color iconColor;
+                      if (isPillDispenser) {
+                        avatarBg = MeDisColors.primary;
+                        avatarIcon = Icons.medication_rounded;
+                        iconColor = Colors.white;
+                      } else if (isRemembered) {
+                        avatarBg = MeDisColors.warning;
+                        avatarIcon = Icons.history_rounded;
+                        iconColor = Colors.white;
+                      } else {
+                        avatarBg = MeDisColors.surface;
+                        avatarIcon = Icons.bluetooth;
+                        iconColor = MeDisColors.muted;
+                      }
+
                       return Container(
                         decoration: BoxDecoration(
-                          color: isPillDispenser
-                              ? MeDisColors.primarySoft.withValues(alpha: 0.5)
-                              : MeDisColors.background,
-                          borderRadius:
-                              BorderRadius.circular(MeDisRadius.card),
-                          border: Border.all(
-                            color: isPillDispenser
-                                ? MeDisColors.primary.withValues(alpha: 0.4)
-                                : MeDisColors.border,
-                            width: isPillDispenser ? 1.5 : 1.0,
-                          ),
+                          color: cardBg,
+                          borderRadius: BorderRadius.circular(MeDisRadius.card),
+                          border: cardBorder,
                         ),
                         child: ListTile(
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 16,
-                            vertical: 4,
+                            vertical: 6,
                           ),
                           leading: CircleAvatar(
-                            backgroundColor: isPillDispenser
-                                ? MeDisColors.primary
-                                : MeDisColors.surface,
-                            child: Icon(
-                              isPillDispenser
-                                  ? Icons.medication
-                                  : Icons.bluetooth,
-                              color: isPillDispenser
-                                  ? Colors.white
-                                  : MeDisColors.muted,
-                            ),
+                            backgroundColor: avatarBg,
+                            child: Icon(avatarIcon, color: iconColor),
                           ),
-                          title: Row(
+                          title: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Flexible(
-                                child: Text(
-                                  name.isNotEmpty
-                                      ? name
-                                      : 'อุปกรณ์ที่ไม่ระบุชื่อ',
-                                  style: TextStyle(
-                                    fontWeight: isPillDispenser
-                                        ? FontWeight.w700
-                                        : FontWeight.w600,
-                                    color: MeDisColors.text,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
+                              Text(
+                                name.isNotEmpty
+                                    ? name
+                                    : 'อุปกรณ์ที่ไม่ระบุชื่อ',
+                                style: TextStyle(
+                                  fontWeight: (isPillDispenser || isRemembered)
+                                      ? FontWeight.w700
+                                      : FontWeight.w600,
+                                  color: MeDisColors.text,
+                                  fontSize: 15,
                                 ),
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              if (isPillDispenser) ...[
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: MeDisColors.primary,
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: const Text(
-                                    'MeDisP',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
+                              if (isPillDispenser || isRemembered) ...[
+                                const SizedBox(height: 4),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  children: [
+                                    // Highlight 2: Pill Dispenser Hardware Badge
+                                    if (isPillDispenser)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: MeDisColors.primary,
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.medication_rounded, size: 12, color: Colors.white),
+                                            SizedBox(width: 4),
+                                            Text(
+                                              'เครื่องจ่ายยา MeDisP',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    // Highlight 1: Previously Connected / Remembered Badge
+                                    if (isRemembered)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: MeDisColors.warningSoft,
+                                          border: Border.all(
+                                            color: MeDisColors.warning.withValues(alpha: 0.6),
+                                          ),
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.history_rounded, size: 12, color: MeDisColors.warning),
+                                            SizedBox(width: 4),
+                                            Text(
+                                              'เคยเชื่อมต่อแล้ว',
+                                              style: TextStyle(
+                                                color: MeDisColors.warning,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ],
                             ],
                           ),
-                          subtitle: Text(
-                            item.rssi != null
-                                ? '${item.device.remoteId.str} • ${item.rssi} dBm'
-                                : '${item.device.remoteId.str} • อุปกรณ์ในระบบ',
-                            style: const TextStyle(
-                              color: MeDisColors.muted,
-                              fontSize: 12,
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              item.rssi != null
+                                  ? '${item.device.remoteId.str} • ${item.rssi} dBm'
+                                  : '${item.device.remoteId.str} • อุปกรณ์ในระบบ',
+                              style: const TextStyle(
+                                color: MeDisColors.muted,
+                                fontSize: 12,
+                              ),
                             ),
                           ),
                           trailing: isConnectingThis
@@ -484,7 +669,7 @@ class _BleDevicePickerSheetState extends State<BleDevicePickerSheet> {
                                 )
                               : FilledButton(
                                   style: FilledButton.styleFrom(
-                                    backgroundColor: isPillDispenser
+                                    backgroundColor: (isPillDispenser || isRemembered)
                                         ? MeDisColors.primary
                                         : MeDisColors.muted,
                                     padding: const EdgeInsets.symmetric(
