@@ -958,9 +958,10 @@ void processIncomingCommand(const String &jsonPayload) {
     sendBleEvent(syncEvent);
     sendResponseNotification("success", "Sync data ready");
   }
-  // 7. 7-DAY HISTORY SYNC COMMAND
+    // 7. UNLIMITED HISTORY SYNC & CLEAR COMMANDS
   else if (cmd == "sync_history" || cmd == "get_history") {
-    int requestedOffset = doc.containsKey("day_offset") ? (doc["day_offset"] | 0) : -1;
+    int requestedOffset =
+        doc.containsKey("day_offset") ? (doc["day_offset"] | 0) : -1;
     String histContent = readStorageFile(FILE_HISTORY);
 #if ARDUINOJSON_VERSION_MAJOR >= 7
     JsonDocument hDoc;
@@ -969,13 +970,36 @@ void processIncomingCommand(const String &jsonPayload) {
 #endif
     deserializeJson(hDoc, histContent);
 
-    int startDay = (requestedOffset >= 0) ? requestedOffset : 0;
-    int endDay = (requestedOffset >= 0) ? requestedOffset : 6;
+    // Collect all distinct dates present in history log
+    std::vector<String> targetDates;
+    if (requestedOffset >= 0) {
+      targetDates.push_back(getCurrentDateStr(requestedOffset));
+    } else {
+      // Extract unique dates from history in chronological order
+      if (hDoc["history"].is<JsonArray>()) {
+        for (JsonObject h : hDoc["history"].as<JsonArray>()) {
+          String dStr = h["date"] | "";
+          if (dStr.length() > 0) {
+            bool exists = false;
+            for (const String &ed : targetDates) {
+              if (ed == dStr) { exists = true; break; }
+            }
+            if (!exists) targetDates.push_back(dStr);
+          }
+        }
+      }
+      // Ensure at least today's date is included even if history is empty
+      String todayStr = getCurrentDateStr(0);
+      bool hasToday = false;
+      for (const String &ed : targetDates) {
+        if (ed == todayStr) { hasToday = true; break; }
+      }
+      if (!hasToday) targetDates.push_back(todayStr);
+    }
 
-    for (int d = startDay; d <= endDay; d++) {
-      String targetDate = getCurrentDateStr(d);
+    for (size_t dIdx = 0; dIdx < targetDates.size(); dIdx++) {
+      String targetDate = targetDates[dIdx];
 
-      // Count matching records for this day
       int matchCount = 0;
       if (hDoc["history"].is<JsonArray>()) {
         for (JsonObject h : hDoc["history"].as<JsonArray>()) {
@@ -990,7 +1014,7 @@ void processIncomingCommand(const String &jsonPayload) {
         DynamicJsonDocument dayDoc(512);
 #endif
         dayDoc["event"] = "HISTORY_DAY";
-        dayDoc["day_offset"] = d;
+        dayDoc["day_offset"] = (int)dIdx;
         dayDoc["date"] = targetDate;
         dayDoc.createNestedArray("records");
         String dayOutput;
@@ -998,7 +1022,6 @@ void processIncomingCommand(const String &jsonPayload) {
         sendBleEvent(dayOutput);
         delay(40);
       } else {
-        // Send in MTU-safe chunks (max 3 records per packet, payload < 320 bytes)
         int currentInChunk = 0;
 #if ARDUINOJSON_VERSION_MAJOR >= 7
         JsonDocument dayDoc;
@@ -1006,7 +1029,7 @@ void processIncomingCommand(const String &jsonPayload) {
         DynamicJsonDocument dayDoc(512);
 #endif
         dayDoc["event"] = "HISTORY_DAY";
-        dayDoc["day_offset"] = d;
+        dayDoc["day_offset"] = (int)dIdx;
         dayDoc["date"] = targetDate;
         JsonArray recArr = dayDoc.createNestedArray("records");
 
@@ -1032,7 +1055,7 @@ void processIncomingCommand(const String &jsonPayload) {
 
               dayDoc.clear();
               dayDoc["event"] = "HISTORY_DAY";
-              dayDoc["day_offset"] = d;
+              dayDoc["day_offset"] = (int)dIdx;
               dayDoc["date"] = targetDate;
               recArr = dayDoc.createNestedArray("records");
               currentInChunk = 0;
@@ -1051,6 +1074,54 @@ void processIncomingCommand(const String &jsonPayload) {
 
     sendBleEvent("{\"event\":\"HISTORY_SYNC_DONE\",\"status\":\"success\"}");
     sendResponseNotification("success", "History sync finished");
+  }
+  // 7b. CLEAR HISTORY COMMAND (Preserves today's active records!)
+  else if (cmd == "clear_history") {
+    String beforeDate = doc.containsKey("before_date") ? doc["before_date"].as<String>() : getCurrentDateStr(0);
+    String histContent = readStorageFile(FILE_HISTORY);
+#if ARDUINOJSON_VERSION_MAJOR >= 7
+    JsonDocument hDoc;
+    JsonDocument newHDoc;
+#else
+    DynamicJsonDocument hDoc(4096);
+    DynamicJsonDocument newHDoc(4096);
+#endif
+    deserializeJson(hDoc, histContent);
+    JsonArray newHistArr = newHDoc.createNestedArray("history");
+
+    int keptCount = 0;
+    int clearedCount = 0;
+    if (hDoc["history"].is<JsonArray>()) {
+      for (JsonObject h : hDoc["history"].as<JsonArray>()) {
+        String recDate = h["date"] | "";
+        // Keep records from today or after beforeDate
+        if (recDate.length() > 0 && recDate >= beforeDate) {
+          JsonObject kept = newHistArr.createNestedObject();
+          kept["date"] = h["date"];
+          kept["time"] = h["time"];
+          kept["slot"] = h["slot"];
+          kept["qty"] = h["qty"];
+          kept["med"] = h["med"];
+          kept["type"] = h["type"];
+          kept["status"] = h["status"];
+          if (h.containsKey("sched_time")) kept["sched_time"] = h["sched_time"];
+          keptCount++;
+        } else {
+          clearedCount++;
+        }
+      }
+    }
+
+    String outHist;
+    serializeJson(newHDoc, outHist);
+    writeStorageFile(FILE_HISTORY, outHist);
+
+    Serial.printf("[STORAGE] History cleared: %d purged, %d preserved (from %s onwards)\n",
+                  clearedCount, keptCount, beforeDate.c_str());
+
+    String clearedEvent = "{\"event\":\"HISTORY_CLEARED\",\"status\":\"success\",\"preserved\":" + String(keptCount) + "}";
+    sendBleEvent(clearedEvent);
+    sendResponseNotification("success", "Past history cleared");
   }
   // 8. FACTORY RESET / CLEAR DATA COMMAND
   else if (cmd == "clear_data" || cmd == "factory_reset") {

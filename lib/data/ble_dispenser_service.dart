@@ -504,13 +504,22 @@ class BleDispenserService {
     return sendCommand({'cmd': 'get_schedule'});
   }
 
-  /// Request 7-day intake history sync from ESP32
+  /// Request intake history sync from ESP32 (all un-cleared days)
   Future<bool> requestHistorySync({int? dayOffset}) async {
     debugPrint(
         '[BLE SYNC] Requesting intake history from device (dayOffset: $dayOffset)');
     return sendCommand({
       'cmd': 'sync_history',
       if (dayOffset != null) 'day_offset': dayOffset,
+    });
+  }
+
+  /// Clear synced history from ESP32 Flash, selectively keeping today's active records
+  Future<bool> clearHistory({String? beforeDate}) async {
+    debugPrint('[BLE SYNC] Requesting clear_history (beforeDate: $beforeDate)');
+    return sendCommand({
+      'cmd': 'clear_history',
+      if (beforeDate != null && beforeDate.isNotEmpty) 'before_date': beforeDate,
     });
   }
 

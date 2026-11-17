@@ -778,6 +778,14 @@ class AppController extends ChangeNotifier {
             _rebuildMeals();
             notifyListeners();
           });
+          // Clear synced historical records from ESP32, while preserving today's active records
+          final now = _now();
+          final todayStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+          bleService.clearHistory(beforeDate: todayStr);
+          break;
+
+        case 'HISTORY_CLEARED':
+          debugPrint('[BLE EVENT] ESP32 cleared past history records (kept today)');
           break;
 
         case 'INTAKE_RECORDED':
@@ -823,7 +831,14 @@ class AppController extends ChangeNotifier {
           break;
 
         case 'DISPENSER_RESET':
-          debugPrint('[BLE EVENT] ESP32 was factory reset');
+          debugPrint('[BLE EVENT] ESP32 was factory reset -> resetting local slots to empty');
+          _dispenser.slots().then((currentSlots) async {
+            final emptiedSlots = currentSlots.map((s) => s.copyWith(remaining: 0, drug: null)).toList();
+            await _dispenser.updateSlotsFromDevice(emptiedSlots);
+            slots = await _dispenser.slots();
+            _rebuildMeals();
+            notifyListeners();
+          });
           break;
       }
     } catch (e) {

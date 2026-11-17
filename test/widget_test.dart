@@ -87,6 +87,13 @@ void main() {
                     takenAt: past,
                     isPrn: true,
                     doses: const [DrugDose(prnDrug, 1)]),
+                // Past missed day: recorded on that date but 0 scheduled meals taken
+                IntakeRecord(
+                    id: 'past-missed-1',
+                    takenAt: pastMissed,
+                    isPrn: true,
+                    reason: 'มีอาการ',
+                    doses: const []),
                 // Today: partial (breakfast only)
                 IntakeRecord(
                     id: 'today-1',

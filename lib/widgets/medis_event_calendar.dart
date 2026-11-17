@@ -73,11 +73,12 @@ class MeDisEventCalendar extends StatelessWidget {
   }
 
   _DayMedicationData _calculateDayData(
-      DateTime date, Set<MealType> completedMeals, bool hasPrn) {
+      DateTime date, Set<MealType> completedMeals, bool hasPrn, bool hasDayRecords) {
     final today = DateUtils.dateOnly(DateTime.now());
     final targetDate = DateUtils.dateOnly(date);
     final isToday = DateUtils.isSameDay(targetDate, today);
 
+    // Future dates have no percentage
     if (targetDate.isAfter(today)) {
       return const _DayMedicationData(
         percent: null,
@@ -87,6 +88,7 @@ class MeDisEventCalendar extends StatelessWidget {
       );
     }
 
+    // Check if the medication was configured/active on this date
     final activeScheduledDrugs = drugs.where((drug) {
       if (drug.isPrn) return false;
       if (drug.addedAt != null) {
@@ -100,6 +102,24 @@ class MeDisEventCalendar extends StatelessWidget {
       return true;
     }).toList();
 
+    // If no scheduled medications were active on this date, render empty
+    if (activeScheduledDrugs.isEmpty) {
+      if (completedMeals.isNotEmpty) {
+        return _DayMedicationData(
+          percent: 100,
+          hasPrn: hasPrn,
+          color: MeDisColors.success,
+          bgColor: MeDisColors.successSoft,
+        );
+      }
+      return _DayMedicationData(
+        percent: null,
+        hasPrn: hasPrn,
+        color: Colors.transparent,
+        bgColor: Colors.transparent,
+      );
+    }
+
     final expectedMeals = <MealType>{};
     for (final drug in activeScheduledDrugs) {
       for (final instruction in drug.instructions) {
@@ -107,16 +127,27 @@ class MeDisEventCalendar extends StatelessWidget {
       }
     }
 
+    // Days without recorded intake:
+    // If a day has no records at all (unsynced gap / new device), leave empty (null).
+    // 0% is only shown if the day has records (hasDayRecords) but no scheduled meals taken.
     int? percent;
     Color color = MeDisColors.text;
     Color bgColor = MeDisColors.surface;
 
-    if (activeScheduledDrugs.isNotEmpty && expectedMeals.isNotEmpty) {
-      final completedCount = completedMeals.intersection(expectedMeals).length;
-      final rate = (completedCount / expectedMeals.length).clamp(0.0, 1.0);
-      percent = (rate * 100).round();
-      color = _rateColor(rate, isToday: isToday);
-      bgColor = _rateBgColor(rate, isToday: isToday);
+    if (expectedMeals.isNotEmpty) {
+      if (!hasDayRecords && !isToday) {
+        // Gap or un-synced past day: render blank/empty
+        percent = null;
+      } else if (!hasDayRecords && isToday && completedMeals.isEmpty) {
+        // Today with no records yet: render blank/empty
+        percent = null;
+      } else {
+        final completedCount = completedMeals.intersection(expectedMeals).length;
+        final rate = (completedCount / expectedMeals.length).clamp(0.0, 1.0);
+        percent = (rate * 100).round();
+        color = _rateColor(rate, isToday: isToday);
+        bgColor = _rateBgColor(rate, isToday: isToday);
+      }
     } else {
       if (completedMeals.isNotEmpty) {
         percent = 100;
@@ -185,18 +216,21 @@ class MeDisEventCalendar extends StatelessWidget {
               final day = index - offset + 1;
               if (day < 1 || day > dayCount) return const SizedBox();
               final date = DateTime(first.year, first.month, day);
-              final meals = showMedicationEvents
+              final dayRecords = showMedicationEvents
                   ? intakes
                       .where((record) =>
-                          !record.isPrn &&
-                          record.meal != null &&
                           DateUtils.isSameDay(record.takenAt, date))
+                      .toList()
+                  : <IntakeRecord>[];
+              final meals = showMedicationEvents
+                  ? dayRecords
+                      .where((record) =>
+                          !record.isPrn && record.meal != null)
                       .map((record) => record.meal!)
                       .toSet()
                   : <MealType>{};
               final hasPrn = showMedicationEvents
-                  ? intakes.any((record) =>
-                      record.isPrn && DateUtils.isSameDay(record.takenAt, date))
+                  ? dayRecords.any((record) => record.isPrn)
                   : false;
               final allergyCount = showAllergyEvents
                   ? allergies
@@ -204,7 +238,7 @@ class MeDisEventCalendar extends StatelessWidget {
                       .length
                   : 0;
               final dayData = showMedicationEvents
-                  ? _calculateDayData(date, meals, hasPrn)
+                  ? _calculateDayData(date, meals, hasPrn, dayRecords.isNotEmpty)
                   : null;
               final selected = DateUtils.isSameDay(selectedDate, date);
               final today = DateUtils.isSameDay(DateTime.now(), date);
