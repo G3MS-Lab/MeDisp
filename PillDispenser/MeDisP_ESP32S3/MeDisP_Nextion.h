@@ -206,39 +206,31 @@ inline String getMealNameFromTime(const String &timeStr) {
 }
 
 // ----------------------------------------------------------------------------
-// Helper: Check if all scheduled doses for a specific meal time were taken today
+// Helper: Check if two time strings refer to the same meal window
 // ----------------------------------------------------------------------------
-inline bool isScheduledMealCompletedToday(const String &mealTime) {
-  if (mealTime.length() < 5)
+inline bool isMealTimeMatching(const String &t1, const String &t2) {
+  if (t1.length() == 0 || t2.length() == 0)
+    return true;
+  if (t1 == t2)
+    return true;
+  if (t1.length() >= 5 && t2.length() >= 5) {
+    if (getMealNameFromTime(t1) == getMealNameFromTime(t2))
+      return true;
+    int m1 = t1.substring(0, 2).toInt() * 60 + t1.substring(3, 5).toInt();
+    int m2 = t2.substring(0, 2).toInt() * 60 + t2.substring(3, 5).toInt();
+    if (abs(m1 - m2) <= 60)
+      return true;
+  }
+  return false;
+}
+
+// ----------------------------------------------------------------------------
+// Helper: Check if a specific slot has already been taken today for a given meal
+// ----------------------------------------------------------------------------
+inline bool isSlotTakenForMealToday(int slot, const String &mealTime) {
+  if (slot < 1 || slot > NUM_SLOTS)
     return false;
   String todayDate = getCurrentDateStr(0);
-
-  String schedContent = readStorageFile(FILE_SCHEDULE);
-  if (schedContent.length() == 0)
-    schedContent = currentScheduleJson;
-#if ARDUINOJSON_VERSION_MAJOR >= 7
-  JsonDocument sDoc;
-#else
-  DynamicJsonDocument sDoc(2048);
-#endif
-  if (deserializeJson(sDoc, schedContent))
-    return false;
-  if (!sDoc["schedule"].is<JsonArray>())
-    return false;
-
-  std::vector<int> requiredSlots;
-  for (JsonObject item : sDoc["schedule"].as<JsonArray>()) {
-    String t = item["time"] | item["t"] | "";
-    if (t == mealTime) {
-      int s = item["slot"] | item["s"] | 0;
-      if (s >= 1 && s <= NUM_SLOTS) {
-        requiredSlots.push_back(s);
-      }
-    }
-  }
-
-  if (requiredSlots.empty())
-    return false;
 
   String histContent = readStorageFile(FILE_HISTORY);
   if (histContent.length() == 0)
@@ -253,29 +245,96 @@ inline bool isScheduledMealCompletedToday(const String &mealTime) {
   if (!hDoc["history"].is<JsonArray>())
     return false;
 
-  for (int reqSlot : requiredSlots) {
-    bool slotTaken = false;
-    for (JsonObject r : hDoc["history"].as<JsonArray>()) {
-      int s = r["slot"] | 0;
-      String d = r["date"] | "";
-      String st = r["sched_time"] | "";
-      String status = r["status"] | "";
-      String type = r["type"] | "";
-      if (s == reqSlot &&
-          (d == todayDate || d.length() == 0 || d == "1970-01-01") &&
-          (status.equalsIgnoreCase("taken") || status.equalsIgnoreCase("TAKEN")) &&
-          (type.equalsIgnoreCase("meal") || type.equalsIgnoreCase("MEAL"))) {
-        if (st.length() == 0 || st == mealTime) {
-          slotTaken = true;
-          break;
+  for (JsonObject r : hDoc["history"].as<JsonArray>()) {
+    int s = r["slot"] | 0;
+    String d = r["date"] | "";
+    String st = r["sched_time"] | "";
+    String status = r["status"] | "";
+    String type = r["type"] | "";
+    if (s == slot &&
+        (d == todayDate || d.length() == 0 || d == "1970-01-01") &&
+        (status.equalsIgnoreCase("taken")) &&
+        (type.equalsIgnoreCase("meal"))) {
+      if (isMealTimeMatching(st, mealTime)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// ----------------------------------------------------------------------------
+// Helper: Get meal intake progress (total scheduled slots vs taken slots today)
+// ----------------------------------------------------------------------------
+inline void getMealIntakeProgressToday(const String &mealTime, int &outTotal, int &outTaken) {
+  outTotal = 0;
+  outTaken = 0;
+  if (mealTime.length() < 5)
+    return;
+
+  String schedContent = readStorageFile(FILE_SCHEDULE);
+  if (schedContent.length() == 0)
+    schedContent = currentScheduleJson;
+#if ARDUINOJSON_VERSION_MAJOR >= 7
+  JsonDocument sDoc;
+#else
+  DynamicJsonDocument sDoc(2048);
+#endif
+
+  std::vector<int> accountedSlots;
+
+  if (!deserializeJson(sDoc, schedContent) && sDoc["schedule"].is<JsonArray>()) {
+    for (JsonObject item : sDoc["schedule"].as<JsonArray>()) {
+      String t = item["time"] | item["t"] | "";
+      if (isMealTimeMatching(t, mealTime)) {
+        int s = item["slot"] | item["s"] | 0;
+        if (s >= 1 && s <= NUM_SLOTS) {
+          bool alreadyCounted = false;
+          for (int as : accountedSlots) {
+            if (as == s) { alreadyCounted = true; break; }
+          }
+          if (!alreadyCounted) {
+            accountedSlots.push_back(s);
+            outTotal++;
+            if (isSlotTakenForMealToday(s, mealTime)) {
+              outTaken++;
+            }
+          }
         }
       }
     }
-    if (!slotTaken)
-      return false;
   }
 
-  return true;
+  // Also include any meal slots from gSlots configured for this meal that are not yet in schedule.json
+  for (int i = 0; i < NUM_SLOTS; i++) {
+    int s = i + 1;
+    if (!gSlots[i].isPrn && gSlots[i].drugName.length() > 0) {
+      bool alreadyCounted = false;
+      for (int as : accountedSlots) {
+        if (as == s) { alreadyCounted = true; break; }
+      }
+      if (!alreadyCounted) {
+        String defaultTime = (i == 0 || i == 3) ? "08:00" : (i == 1 || i == 4) ? "12:00" : "18:00";
+        if (isMealTimeMatching(defaultTime, mealTime)) {
+          accountedSlots.push_back(s);
+          outTotal++;
+          if (isSlotTakenForMealToday(s, mealTime)) {
+            outTaken++;
+          }
+        }
+      }
+    }
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Helper: Check if all scheduled doses for a specific meal time were taken today
+// ----------------------------------------------------------------------------
+inline bool isScheduledMealCompletedToday(const String &mealTime) {
+  int total = 0;
+  int taken = 0;
+  getMealIntakeProgressToday(mealTime, total, taken);
+  return (total > 0 && taken >= total);
 }
 
 // ----------------------------------------------------------------------------
@@ -466,6 +525,27 @@ inline void handleReqDaily(bool resetOffset) {
               return a.minutes < b.minutes;
             });
 
+  if (uniqueMeals.empty()) {
+    // Dynamic fallback: If no schedule.json entries exist yet, check if any slots are configured as non-PRN meals
+    for (int i = 0; i < NUM_SLOTS; i++) {
+      if (!gSlots[i].isPrn && gSlots[i].drugName.length() > 0 && gSlots[i].remaining > 0) {
+        String defaultTime = (i == 0 || i == 3) ? "08:00" : (i == 1 || i == 4) ? "12:00" : "18:00";
+        bool exists = false;
+        for (const auto &m : uniqueMeals) {
+          if (m.time == defaultTime) { exists = true; break; }
+        }
+        if (!exists) {
+          MealTimeInfo mti;
+          mti.time = defaultTime;
+          mti.minutes = defaultTime.substring(0, 2).toInt() * 60 + defaultTime.substring(3, 5).toInt();
+          mti.isBefore = true;
+          mti.completed = isScheduledMealCompletedToday(defaultTime);
+          uniqueMeals.push_back(mti);
+        }
+      }
+    }
+  }
+
   // 2. Select Current Meal based on circular 24-hour distance to current time
   String targetTime = "";
   bool isBefore = false;
@@ -516,8 +596,12 @@ inline void handleReqDaily(bool resetOffset) {
 
     for (JsonObject item : doc["schedule"].as<JsonArray>()) {
       String t = item["time"] | item["t"] | "";
-      if (t == targetTime) {
+      if (isMealTimeMatching(t, targetTime)) {
         int s = item["slot"] | item["s"] | 1;
+        // Filter out doses already taken today for this meal
+        if (isSlotTakenForMealToday(s, targetTime)) {
+          continue;
+        }
         String med = item["medicine"] | item["med"] | "";
         if (med.length() == 0 && s >= 1 && s <= NUM_SLOTS)
           med = gSlots[s - 1].drugName;
@@ -530,6 +614,25 @@ inline void handleReqDaily(bool resetOffset) {
       }
     }
 
+    if (mealPills.empty() && !isTargetCompleted) {
+      for (int i = 0; i < NUM_SLOTS; i++) {
+        if (!gSlots[i].isPrn && gSlots[i].drugName.length() > 0 && gSlots[i].remaining > 0) {
+          String dTime = (i == 0 || i == 3) ? "08:00" : (i == 1 || i == 4) ? "12:00" : "18:00";
+          if (isMealTimeMatching(dTime, targetTime)) {
+            int s = i + 1;
+            if (isSlotTakenForMealToday(s, targetTime)) {
+              continue;
+            }
+            DrugDoseRow row;
+            row.name = formatNextionDrugName(gSlots[i].drugName, s);
+            row.qty = 1;
+            row.slot = s;
+            mealPills.push_back(row);
+          }
+        }
+      }
+    }
+
     int totalPills = mealPills.size();
     if (gDailyOffset >= totalPills) {
       gDailyOffset = (totalPills > 0) ? (totalPills - 1) : 0;
@@ -537,17 +640,26 @@ inline void handleReqDaily(bool resetOffset) {
     if (gDailyOffset < 0)
       gDailyOffset = 0;
 
-    for (int r = 0; r < 3; r++) {
-      int idx = gDailyOffset + r;
-      String tName = "t" + String(r);
-      String tQName = "tQ" + String(r);
-      if (idx < totalPills) {
-        nextionSetText(tName, mealPills[idx].name);
-        int q = mealPills[idx].qty;
-        nextionSetText(tQName, String(q) + (q > 1 ? " tablets" : " tablet"));
-      } else {
-        nextionSetText(tName, "");
-        nextionSetText(tQName, "");
+    if (isTargetCompleted) {
+      nextionSetText("t0", "All doses taken for this meal");
+      nextionSetText("tQ0", "TAKEN");
+      nextionSetText("t1", "");
+      nextionSetText("tQ1", "");
+      nextionSetText("t2", "");
+      nextionSetText("tQ2", "");
+    } else {
+      for (int r = 0; r < 3; r++) {
+        int idx = gDailyOffset + r;
+        String tName = "t" + String(r);
+        String tQName = "tQ" + String(r);
+        if (idx < totalPills) {
+          nextionSetText(tName, mealPills[idx].name);
+          int q = mealPills[idx].qty;
+          nextionSetText(tQName, String(q) + (q > 1 ? " tablets" : " tablet"));
+        } else {
+          nextionSetText(tName, (r == 0 && totalPills == 0) ? "No pending pills" : "");
+          nextionSetText(tQName, "");
+        }
       }
     }
 
@@ -555,7 +667,7 @@ inline void handleReqDaily(bool resetOffset) {
       nextionSetText("bDispense", "ALREADY TAKEN");
       nextionSend("bDispense.bco=50712"); // Disabled gray
       nextionSend("bDispense.pco=65535");
-      nextionSend("tsw bDispense,0");     // DISABLE TOUCH
+      nextionSend("tsw bDispense,1");     // Keep touch enabled so tapping provides feedback
       nextionSetVisible("bDispense", true);
     } else if (totalPills > 0) {
       nextionSetText("bDispense", "TAKE MEDICINE");
@@ -567,7 +679,7 @@ inline void handleReqDaily(bool resetOffset) {
       nextionSetText("bDispense", "NO MEDS");
       nextionSend("bDispense.bco=50712"); // Disabled gray
       nextionSend("bDispense.pco=65535");
-      nextionSend("tsw bDispense,0");     // DISABLE TOUCH
+      nextionSend("tsw bDispense,1");     // Keep touch enabled so tapping provides feedback
       nextionSetVisible("bDispense", true);
     }
 
@@ -615,7 +727,7 @@ inline void handleReqDaily(bool resetOffset) {
     nextionSetText("bDispense", "NO MEDS");
     nextionSend("bDispense.bco=50712");
     nextionSend("bDispense.pco=65535");
-    nextionSend("tsw bDispense,0");
+    nextionSend("tsw bDispense,1");
     nextionSetVisible("bDispense", true);
     nextionSetVisible("bScrollup", false);
     nextionSetVisible("bScrolldown", false);
@@ -873,6 +985,19 @@ inline void handleReqTimeline(bool resetOffset) {
       }
     }
 
+    if (uniqueSchedTimes.empty()) {
+      for (int i = 0; i < NUM_SLOTS; i++) {
+        if (!gSlots[i].isPrn && gSlots[i].drugName.length() > 0 && gSlots[i].remaining > 0) {
+          String defaultTime = (i == 0 || i == 3) ? "08:00" : (i == 1 || i == 4) ? "12:00" : "18:00";
+          bool found = false;
+          for (const auto &ut : uniqueSchedTimes) {
+            if (ut == defaultTime) { found = true; break; }
+          }
+          if (!found) uniqueSchedTimes.push_back(defaultTime);
+        }
+      }
+    }
+
     for (const String &mealTime : uniqueSchedTimes) {
       int sMin = mealTime.substring(0, 2).toInt() * 60 +
                  mealTime.substring(3, 5).toInt();
@@ -881,17 +1006,32 @@ inline void handleReqTimeline(bool resetOffset) {
       rec.timeStr = mealTime;
       String mealName = getMealNameFromTime(mealTime);
 
-      int pillCount = 0;
       String firstMed = "";
       for (JsonObject item : sDoc["schedule"].as<JsonArray>()) {
         String t = item["time"] | item["t"] | "";
-        if (t == mealTime) {
-          pillCount++;
+        if (isMealTimeMatching(t, mealTime)) {
           if (firstMed.length() == 0)
             firstMed = item["medicine"] | item["med"] | "";
         }
       }
 
+      if (firstMed.length() == 0) {
+        for (int i = 0; i < NUM_SLOTS; i++) {
+          if (!gSlots[i].isPrn && gSlots[i].drugName.length() > 0) {
+            String defaultTime = (i == 0 || i == 3) ? "08:00" : (i == 1 || i == 4) ? "12:00" : "18:00";
+            if (isMealTimeMatching(defaultTime, mealTime)) {
+              firstMed = gSlots[i].drugName;
+              break;
+            }
+          }
+        }
+      }
+
+      int totalSlots = 0;
+      int takenSlots = 0;
+      getMealIntakeProgressToday(mealTime, totalSlots, takenSlots);
+
+      int pillCount = (totalSlots > 0) ? totalSlots : 1;
       if (pillCount > 1) {
         rec.title = mealName + " (" + String(pillCount) + " meds)";
       } else if (firstMed.length() > 0) {
@@ -900,8 +1040,10 @@ inline void handleReqTimeline(bool resetOffset) {
         rec.title = mealName;
       }
 
-      if (isScheduledMealCompletedToday(mealTime)) {
+      if (totalSlots > 0 && takenSlots >= totalSlots) {
         rec.status = "TAKEN";
+      } else if (takenSlots > 0 && takenSlots < totalSlots) {
+        rec.status = "PARTIAL";
       } else {
         if (sMin + 30 < nowMin) {
           rec.status = "MISSED";
@@ -1038,14 +1180,19 @@ inline void handleReqConfirm() {
     struct DrugDoseRow {
       String name;
       int qty;
+      int slot;
     };
     std::vector<DrugDoseRow> mealPills;
 
     if (doc["schedule"].is<JsonArray>()) {
       for (JsonObject item : doc["schedule"].as<JsonArray>()) {
         String t = item["time"] | item["t"] | "";
-        if (t == gActiveMealTime) {
+        if (isMealTimeMatching(t, gActiveMealTime)) {
           int s = item["slot"] | item["s"] | 1;
+          // Filter out doses already taken today for this meal
+          if (isSlotTakenForMealToday(s, gActiveMealTime)) {
+            continue;
+          }
           String med = item["medicine"] | item["med"] | "";
           if (med.length() == 0 && s >= 1 && s <= NUM_SLOTS)
             med = gSlots[s - 1].drugName;
@@ -1053,7 +1200,27 @@ inline void handleReqConfirm() {
           DrugDoseRow row;
           row.name = formatNextionDrugName(med, s);
           row.qty = q;
+          row.slot = s;
           mealPills.push_back(row);
+        }
+      }
+    }
+
+    if (mealPills.empty() && !isScheduledMealCompletedToday(gActiveMealTime)) {
+      for (int i = 0; i < NUM_SLOTS; i++) {
+        if (!gSlots[i].isPrn && gSlots[i].drugName.length() > 0 && gSlots[i].remaining > 0) {
+          String dTime = (i == 0 || i == 3) ? "08:00" : (i == 1 || i == 4) ? "12:00" : "18:00";
+          if (isMealTimeMatching(dTime, gActiveMealTime)) {
+            int s = i + 1;
+            if (isSlotTakenForMealToday(s, gActiveMealTime)) {
+              continue;
+            }
+            DrugDoseRow row;
+            row.name = formatNextionDrugName(gSlots[i].drugName, s);
+            row.qty = 1;
+            row.slot = s;
+            mealPills.push_back(row);
+          }
         }
       }
     }
@@ -1071,8 +1238,8 @@ inline void handleReqConfirm() {
       int q0 = mealPills[0].qty;
       nextionSetText("tQ0", String(q0) + (q0 > 1 ? " tablets" : " tablet"));
     } else {
-      nextionSetText("t0", "No medication scheduled");
-      nextionSetText("tQ0", "");
+      nextionSetText("t0", isScheduledMealCompletedToday(gActiveMealTime) ? "All doses already taken" : "No medication scheduled");
+      nextionSetText("tQ0", isScheduledMealCompletedToday(gActiveMealTime) ? "TAKEN" : "");
     }
 
     if (totalPills > 1) {
@@ -1454,18 +1621,74 @@ inline void handleNextionConfirm() {
 #endif
     deserializeJson(doc, schedContent);
 
+    struct PendingDispense {
+      int slot;
+      int qty;
+      String medicine;
+    };
+    std::vector<PendingDispense> itemsToDispense;
+
     if (doc["schedule"].is<JsonArray>()) {
       for (JsonObject item : doc["schedule"].as<JsonArray>()) {
         String t = item["time"] | item["t"] | "";
-        if (t == gActiveMealTime) {
+        if (isMealTimeMatching(t, gActiveMealTime)) {
           int s = item["slot"] | item["s"] | 1;
+          if (isSlotTakenForMealToday(s, gActiveMealTime)) {
+            Serial.printf("[CONFIRM] Slot %d already taken today for meal %s. Skipping.\n", s, gActiveMealTime.c_str());
+            continue;
+          }
           int q = item["qty"] | item["q"] | 1;
           String med = item["medicine"] | item["med"] | "";
-          String err = "";
-          executeDispense(s, q, med, "NEXTION_HMI", err, true, gActiveMealTime);
+          if (med.length() == 0 && s >= 1 && s <= NUM_SLOTS)
+            med = gSlots[s - 1].drugName;
+          PendingDispense pd;
+          pd.slot = s;
+          pd.qty = q;
+          pd.medicine = med;
+          itemsToDispense.push_back(pd);
         }
       }
     }
+
+    if (itemsToDispense.empty() && !isScheduledMealCompletedToday(gActiveMealTime)) {
+      for (int i = 0; i < NUM_SLOTS; i++) {
+        if (!gSlots[i].isPrn && gSlots[i].drugName.length() > 0) {
+          String dTime = (i == 0 || i == 3) ? "08:00" : (i == 1 || i == 4) ? "12:00" : "18:00";
+          if (isMealTimeMatching(dTime, gActiveMealTime)) {
+            int s = i + 1;
+            if (isSlotTakenForMealToday(s, gActiveMealTime)) {
+              continue;
+            }
+            PendingDispense pd;
+            pd.slot = s;
+            pd.qty = 1;
+            pd.medicine = gSlots[i].drugName;
+            itemsToDispense.push_back(pd);
+          }
+        }
+      }
+    }
+
+    Serial.printf("[CONFIRM] Dispensing %d remaining medications for meal %s\n",
+                  (int)itemsToDispense.size(), gActiveMealTime.c_str());
+
+    sendBleEvent("{\"event\":\"DAILY_DISPENSE_START\",\"meal\":\"" + gActiveMealTime + "\"}");
+
+    for (size_t i = 0; i < itemsToDispense.size(); i++) {
+      String err = "";
+      Serial.printf("[CONFIRM] Dispensing (%d/%d): Slot %d '%s' (Qty %d)\n",
+                    (int)(i + 1), (int)itemsToDispense.size(),
+                    itemsToDispense[i].slot, itemsToDispense[i].medicine.c_str(), itemsToDispense[i].qty);
+
+      nextionSetText("tNextDose", "Dispensing (" + String(i + 1) + "/" + String(itemsToDispense.size()) + ")");
+      nextionSetText("tNextTime", itemsToDispense[i].medicine);
+      nextionFlush();
+
+      executeDispense(itemsToDispense[i].slot, itemsToDispense[i].qty,
+                      itemsToDispense[i].medicine, "NEXTION_HMI", err, true, gActiveMealTime);
+    }
+
+    sendBleEvent("{\"event\":\"DAILY_DISPENSE_COMPLETE\",\"meal\":\"" + gActiveMealTime + "\"}");
   }
 
   delay(200);

@@ -13,37 +13,44 @@
  * - CORE 0 (Hardware & Dispensing Controller):
  *     * Controller UART (Serial2: TX=IO15, RX=IO16 @ 115200 baud)
  *     * Multi-step state machine orchestrating physical mechanism:
- *         1. Motor Rotation with 4-bit Gray code: "mr,<gray_code>" -> "mr,<gray_code>,success"
+ *         1. Motor Rotation with 4-bit Gray code: "mr,<gray_code>" ->
+ * "mr,<gray_code>,success"
  *         2. Drop picker to tube: "lr,down" -> "lr,down,done"
  *         3. Pill pick with vacuum air pump: "ap,on" -> "ap,on,received"
- *         4. Verify vacuum pressure sensor: "status,apvac" -> "status,apvac,active"
+ *         4. Verify vacuum pressure sensor: "status,apvac" ->
+ * "status,apvac,active"
  *         5. Lift picker: "lr,up" -> "lr,up,done"
  *         6. Release pill to tray: "ap,off" -> "ap,off,received"
  *         (Refill container servo controls: "so,180" / "si,90")
- *     * Mock Dispense mode toggle (Active by default for immediate safe testing)
+ *     * Mock Dispense mode toggle (Active by default for immediate safe
+ * testing)
  *
  * Multi-Tab Modular Architecture (Clean Function Separation):
  * - MeDisP_Config.h   : Pinout definitions, UUIDs, structs, styles, and externs
- * - MeDisP_Hardware.h : Gray code mapping, motor controls, vacuum, Core 0 FreeRTOS task
- * - MeDisP_Storage.h  : Dual storage (SD/LittleFS), slot/schedule/history persistence
- * - MeDisP_Ble.h      : NimBLE server, GATT events, decomposed BLE command handlers
- * - MeDisP_Nextion.h  : Nextion HMI serial protocol, page renderers, touch message handlers
+ * - MeDisP_Hardware.h : Gray code mapping, motor controls, vacuum, Core 0
+ * FreeRTOS task
+ * - MeDisP_Storage.h  : Dual storage (SD/LittleFS), slot/schedule/history
+ * persistence
+ * - MeDisP_Ble.h      : NimBLE server, GATT events, decomposed BLE command
+ * handlers
+ * - MeDisP_Nextion.h  : Nextion HMI serial protocol, page renderers, touch
+ * message handlers
  * - MeDisP_Cli.h      : Serial CLI command handlers and diagnostics
  * ============================================================================
  */
 
+#include "MeDisP_Ble.h"
+#include "MeDisP_Cli.h"
 #include "MeDisP_Config.h"
 #include "MeDisP_Hardware.h"
-#include "MeDisP_Storage.h"
-#include "MeDisP_Ble.h"
 #include "MeDisP_Nextion.h"
-#include "MeDisP_Cli.h"
+#include "MeDisP_Storage.h"
 
 // ============================================================================
 // Global Variable Definitions (Memory Allocation)
 // ============================================================================
 HardwareSerial NextionSerial(1); // UART1 for Nextion HMI (RX=18, TX=17)
-HardwareSerial CtrlSerial(2);    // UART2 for Motor Controller ESP32 (RX=16, TX=15)
+HardwareSerial CtrlSerial(2); // UART2 for Motor Controller ESP32 (RX=16, TX=15)
 
 bool gEnableMockDispense = false;
 SlotInfo gSlots[NUM_SLOTS];
@@ -95,27 +102,33 @@ void setup() {
   delay(1000);
 
   Serial.println("\n==================================================");
-  Serial.println("  Smart Pill Dispenser (MeDisP) - ESP32-S3 Dual-Core Firmware");
-  Serial.println("  Core 1: BLE + Nextion HMI | Core 0: Motor & Dispensing Controller");
+  Serial.println(
+      "  Smart Pill Dispenser (MeDisP) - ESP32-S3 Dual-Core Firmware");
+  Serial.println(
+      "  Core 1: BLE + Nextion HMI | Core 0: Motor & Dispensing Controller");
   Serial.println("==================================================");
 
   // 1. Initialize Dual Storage Subsystem (MicroSD with LittleFS fallback)
   setupStorage();
 
   // 2. Initialize Nextion HMI UART1 on IO18 (RX), IO17 (TX) @ 9600 baud
-  // Set INPUT_PULLUP to prevent floating pin electrical noise when display is unplugged
+  // Set INPUT_PULLUP to prevent floating pin electrical noise when display is
+  // unplugged
   pinMode(NEXTION_RX_PIN, INPUT_PULLUP);
   NextionSerial.begin(NEXTION_BAUD, SERIAL_8N1, NEXTION_RX_PIN, NEXTION_TX_PIN);
   NextionSerial.setTimeout(50);
-  Serial.printf("[NEXTION] Initialized Nextion Serial on RX (IO %d), TX (IO %d) at %d baud\n",
+  Serial.printf("[NEXTION] Initialized Nextion Serial on RX (IO %d), TX (IO "
+                "%d) at %d baud\n",
                 NEXTION_RX_PIN, NEXTION_TX_PIN, NEXTION_BAUD);
 
-  // 3. Initialize Mechanism / Motor Controller UART2 on IO16 (RX), IO15 (TX) @ 115200 baud
-  // Set INPUT_PULLUP to prevent floating pin electrical noise when motor controller is unplugged
+  // 3. Initialize Mechanism / Motor Controller UART2 on IO16 (RX), IO15 (TX) @
+  // 115200 baud Set INPUT_PULLUP to prevent floating pin electrical noise when
+  // motor controller is unplugged
   pinMode(CTRL_RX_PIN, INPUT_PULLUP);
   CtrlSerial.begin(CTRL_BAUD, SERIAL_8N1, CTRL_RX_PIN, CTRL_TX_PIN);
   CtrlSerial.setTimeout(50);
-  Serial.printf("[CTRL] Initialized Controller Serial on RX (IO %d), TX (IO %d) at %d baud\n",
+  Serial.printf("[CTRL] Initialized Controller Serial on RX (IO %d), TX (IO "
+                "%d) at %d baud\n",
                 CTRL_RX_PIN, CTRL_TX_PIN, CTRL_BAUD);
 
   // 4. Initialize Inter-Core FreeRTOS Semaphores
@@ -124,16 +137,12 @@ void setup() {
   gDispenseDoneSem = xSemaphoreCreateBinary();
 
   // 5. Pin Motor & Hardware Controller Task to CORE 0
-  xTaskCreatePinnedToCore(
-      TaskCore0HardwareController,
-      "TaskCore0Ctrl",
-      8192,
-      nullptr,
-      1,
-      nullptr,
-      0 // Pin to Core 0!
+  xTaskCreatePinnedToCore(TaskCore0HardwareController, "TaskCore0Ctrl", 8192,
+                          nullptr, 1, nullptr,
+                          0 // Pin to Core 0!
   );
-  Serial.println("[RTOS] Pinned TaskCore0HardwareController to Core 0 successfully.");
+  Serial.println(
+      "[RTOS] Pinned TaskCore0HardwareController to Core 0 successfully.");
 
   seedDefaultDemoDataIfEmpty();
 
@@ -147,12 +156,14 @@ void setup() {
   nextionSend("page Daily");
   delay(50);
   handleReqDaily(true);
-  Serial.println("[NEXTION PUSH] Sent initial one-way screen update to Nextion!");
+  Serial.println(
+      "[NEXTION PUSH] Sent initial one-way screen update to Nextion!");
 
   // 7. Initialize BLE Peripheral Server (NimBLE)
   setupBleServer();
 
-  Serial.println("[CLI] Serial CLI active. Type 'help' to view debug commands.\n");
+  Serial.println(
+      "[CLI] Serial CLI active. Type 'help' to view debug commands.\n");
 }
 
 // ============================================================================

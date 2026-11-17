@@ -332,6 +332,8 @@ inline void cliHelp() {
   Serial.println("\n[GROUP 5: MEDICATION & TIME CONFIGURATION] (Configure pills & system clock)");
   Serial.println("  set slot <1-6> <med> [rem] [prn|meal] : Configure slot medication & stock");
   Serial.println("                                          Example: 'set slot 1 Paracetamol 10 meal'");
+  Serial.println("  set schedule <1-6> <HH:MM> [qty] [bf] : Set meal schedule time for slot");
+  Serial.println("                                          Example: 'set schedule 1 08:00 1 before'");
   Serial.println("  set prn <1-6> <true|false>            : Toggle PRN mode for specific slot");
   Serial.println("  sync_time <epoch>                     : Manually set system Unix timestamp");
   Serial.println("  reboot                                : Restart ESP32-S3");
@@ -404,6 +406,39 @@ inline void cliSetSlot(const String &param) {
       saveSlotsToStorage();
       Serial.printf("[CLI] Slot %d configured: Drug='%s', Rem=%d, isPrn=%d\n",
                     sNum, drug.c_str(), rem, isPrn ? 1 : 0);
+
+      if (!isPrn) {
+        // Automatically add default meal schedule for this slot so Daily page activates immediately
+        String mealTime = (sNum == 1 || sNum == 4) ? "08:00" :
+                          (sNum == 2 || sNum == 5) ? "12:00" : "18:00";
+#if ARDUINOJSON_VERSION_MAJOR >= 7
+        JsonDocument itemDoc;
+        JsonArray arr = itemDoc.to<JsonArray>();
+        JsonObject obj = arr.add<JsonObject>();
+#else
+        DynamicJsonDocument itemDoc(512);
+        JsonArray arr = itemDoc.to<JsonArray>();
+        JsonObject obj = arr.createNestedObject();
+#endif
+        obj["time"] = mealTime;
+        obj["slot"] = sNum;
+        obj["medicine"] = drug;
+        obj["qty"] = 1;
+        obj["before_food"] = true;
+        updateSlotScheduleInStorage(sNum, arr);
+        Serial.printf("[CLI] Auto-assigned schedule: %s for Slot %d (%s)\n",
+                      mealTime.c_str(), sNum, drug.c_str());
+      } else {
+        // Clear schedule for this slot if set to PRN
+#if ARDUINOJSON_VERSION_MAJOR >= 7
+        JsonDocument itemDoc;
+        JsonArray arr = itemDoc.to<JsonArray>();
+#else
+        DynamicJsonDocument itemDoc(256);
+        JsonArray arr = itemDoc.to<JsonArray>();
+#endif
+        updateSlotScheduleInStorage(sNum, arr);
+      }
       refreshCurrentNextionPage();
     } else {
       Serial.println("[CLI] Invalid slot number (1-6)");
@@ -428,6 +463,72 @@ inline void cliSetPrn(const String &param) {
       refreshCurrentNextionPage();
     }
   }
+}
+
+inline void cliSetSchedule(const String &param) {
+  int s1 = param.indexOf(' ');
+  if (s1 <= 0) {
+    Serial.println("[CLI] Usage: set schedule <1-6> <HH:MM> [qty] [before|after]");
+    return;
+  }
+  int sNum = param.substring(0, s1).toInt();
+  if (sNum < 1 || sNum > NUM_SLOTS) {
+    Serial.println("[CLI] Invalid slot number (1-6)");
+    return;
+  }
+  String rest = param.substring(s1 + 1);
+  rest.trim();
+  int s2 = rest.indexOf(' ');
+  String timeStr = (s2 > 0) ? rest.substring(0, s2) : rest;
+  timeStr.trim();
+  if (timeStr.length() != 5 || timeStr.charAt(2) != ':') {
+    Serial.println("[CLI] Invalid time format. Use HH:MM (e.g. 08:00)");
+    return;
+  }
+  int qty = 1;
+  bool beforeFood = true;
+  if (s2 > 0) {
+    String rest2 = rest.substring(s2 + 1);
+    rest2.trim();
+    int s3 = rest2.indexOf(' ');
+    if (s3 > 0) {
+      qty = rest2.substring(0, s3).toInt();
+      String bfStr = rest2.substring(s3 + 1);
+      bfStr.trim();
+      bfStr.toLowerCase();
+      beforeFood = (bfStr != "after" && bfStr != "false" && bfStr != "0");
+    } else {
+      qty = rest2.toInt();
+    }
+  }
+  if (qty <= 0)
+    qty = 1;
+
+  String drug = gSlots[sNum - 1].drugName;
+  if (drug.length() == 0)
+    drug = "Slot " + String(sNum);
+
+  gSlots[sNum - 1].isPrn = false;
+  saveSlotsToStorage();
+
+#if ARDUINOJSON_VERSION_MAJOR >= 7
+  JsonDocument itemDoc;
+  JsonArray arr = itemDoc.to<JsonArray>();
+  JsonObject obj = arr.add<JsonObject>();
+#else
+  DynamicJsonDocument itemDoc(512);
+  JsonArray arr = itemDoc.to<JsonArray>();
+  JsonObject obj = arr.createNestedObject();
+#endif
+  obj["time"] = timeStr;
+  obj["slot"] = sNum;
+  obj["medicine"] = drug;
+  obj["qty"] = qty;
+  obj["before_food"] = beforeFood;
+  updateSlotScheduleInStorage(sNum, arr);
+  Serial.printf("[CLI] Schedule configured: Slot %d (%s), Time %s, Qty %d, %s food\n",
+                sNum, drug.c_str(), timeStr.c_str(), qty, beforeFood ? "before" : "after");
+  refreshCurrentNextionPage();
 }
 
 inline void cliPrnStatus(const String &param) {
@@ -656,6 +757,8 @@ inline void handleSerialCli() {
     cliDispense(line.substring(9));
   } else if (line.startsWith("set slot ")) {
     cliSetSlot(line.substring(9));
+  } else if (line.startsWith("set schedule ")) {
+    cliSetSchedule(line.substring(13));
   } else if (line.startsWith("set prn ")) {
     cliSetPrn(line.substring(8));
   } else if (line == "req prn") {
