@@ -321,5 +321,79 @@ void main() {
         'แก้ปวด / ลดไข้');
     expect(restored.slots[1].remaining, 8);
   });
+
+  test(
+      'adding a drug to an already taken meal only dispenses the new drug without double dosing',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final auth = OfflineAuthRepository(MemoryAuthStorage());
+    await auth.initialize();
+    final user = await auth.register(
+        name: 'Patient Partial',
+        email: 'partial@medisp.local',
+        password: 'password');
+    expect(user, isNotNull);
+
+    final currentTime = DateTime(2026, 3, 10, 8, 30);
+    final controller = AppController(
+        auth,
+        PersistentDispenserRepository(auth),
+        PersistentMedicationRepository(auth),
+        now: () => currentTime);
+    await controller.initialize();
+    controller.connectMockDevice();
+
+    final drugA = Drug(
+      id: 'drug-a',
+      name: 'Drug A',
+      instructions: const [
+        DoseInstruction(
+            meal: MealType.breakfast, quantity: 1, beforeFood: true),
+      ],
+    );
+    await controller.addDrugToSlot(drugA, 1, 10);
+    expect(controller.slots[0].remaining, 10);
+    expect(controller.todayMeals.first.completed, isFalse);
+
+    // Consume breakfast (Drug A)
+    await controller.completeMeal(MealType.breakfast);
+    expect(controller.slots[0].remaining, 9);
+    expect(controller.todayMeals.first.completed, isTrue);
+    expect(controller.intakeHistory.length, 1);
+    expect(controller.intakeHistory.first.doses.single.drug.id, 'drug-a');
+
+    // User now adds Drug B to slot 2 for breakfast
+    final drugB = Drug(
+      id: 'drug-b',
+      name: 'Drug B',
+      instructions: const [
+        DoseInstruction(
+            meal: MealType.breakfast, quantity: 2, beforeFood: true),
+      ],
+    );
+    await controller.addDrugToSlot(drugB, 2, 10);
+    expect(controller.slots[1].remaining, 10);
+    // Meal is incomplete now because Drug B is not taken yet
+    expect(controller.todayMeals.first.completed, isFalse);
+
+    // Consume remaining breakfast drugs
+    await controller.completeMeal(MealType.breakfast);
+    // Drug A must NOT have been deducted again!
+    expect(controller.slots[0].remaining, 9);
+    // Drug B must have been deducted
+    expect(controller.slots[1].remaining, 8);
+    // Intake history must have 2 records: one for Drug A, one for Drug B
+    expect(controller.intakeHistory.length, 2);
+    expect(controller.intakeHistory.last.doses.single.drug.id, 'drug-b');
+    expect(controller.intakeHistory.last.doses.single.quantity, 2);
+    // Meal is now fully completed
+    expect(controller.todayMeals.first.completed, isTrue);
+
+    // Tapping completeMeal again should be a safe no-op (no double dosing)
+    await controller.completeMeal(MealType.breakfast);
+    expect(controller.slots[0].remaining, 9);
+    expect(controller.slots[1].remaining, 8);
+    expect(controller.intakeHistory.length, 2);
+  });
 }
 

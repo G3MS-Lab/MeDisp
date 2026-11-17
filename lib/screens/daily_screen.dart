@@ -143,6 +143,7 @@ class ScheduledMealCardData {
   final bool isCompleted;
   final bool isCurrent;
   final String buttonKeyName;
+  final Set<String> takenDrugIds;
 
   const ScheduledMealCardData({
     required this.meal,
@@ -153,7 +154,14 @@ class ScheduledMealCardData {
     required this.isCompleted,
     required this.isCurrent,
     required this.buttonKeyName,
+    this.takenDrugIds = const {},
   });
+
+  List<DrugDose> get remainingDoses =>
+      doses.where((d) => !takenDrugIds.contains(d.drug.id)).toList();
+
+  int get remainingPills =>
+      remainingDoses.fold(0, (sum, item) => sum + item.quantity);
 
   int get totalPills => doses.fold(0, (sum, item) => sum + item.quantity);
 
@@ -185,12 +193,13 @@ List<ScheduledMealCardData> _buildMealCards(
   final cards = <ScheduledMealCardData>[];
 
   for (final meal in controller.todayMeals) {
+    final mealIntakes = todayIntakes.where((r) => r.meal == meal.type);
+    final takenDrugIds =
+        mealIntakes.expand((r) => r.doses.map((d) => d.drug.id)).toSet();
+
     bool checkDosesCompleted(List<DrugDose> doses) {
       if (doses.isEmpty) return false;
       if (meal.completed) return true;
-      final mealIntakes = todayIntakes.where((r) => r.meal == meal.type);
-      final takenDrugIds =
-          mealIntakes.expand((r) => r.doses.map((d) => d.drug.id)).toSet();
       return doses.every((d) => takenDrugIds.contains(d.drug.id));
     }
 
@@ -206,6 +215,7 @@ List<ScheduledMealCardData> _buildMealCards(
         isCompleted: isComp,
         isCurrent: meal.type == currentMeal?.type,
         buttonKeyName: 'receive-meal-${meal.type.name}',
+        takenDrugIds: takenDrugIds,
       ));
       continue;
     }
@@ -230,6 +240,7 @@ List<ScheduledMealCardData> _buildMealCards(
         isCompleted: isComp,
         isCurrent: meal.type == currentMeal?.type,
         buttonKeyName: 'receive-meal-${meal.type.name}',
+        takenDrugIds: takenDrugIds,
       ));
     }
 
@@ -247,6 +258,7 @@ List<ScheduledMealCardData> _buildMealCards(
         buttonKeyName: beforeFoodDoses.isEmpty
             ? 'receive-meal-${meal.type.name}'
             : 'receive-meal-${meal.type.name}-after',
+        takenDrugIds: takenDrugIds,
       ));
     }
   }
@@ -319,7 +331,10 @@ class _ScheduledMealsTab extends StatelessWidget {
       currentMealIndex: currentMealIndex,
       onCompleteCard: (card) async {
         try {
-          await controller.completeMeal(card.mealType, doses: card.doses);
+          final dosesToConsume = card.remainingDoses.isNotEmpty
+              ? card.remainingDoses
+              : card.doses;
+          await controller.completeMeal(card.mealType, doses: dosesToConsume);
         } catch (error) {
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -830,7 +845,9 @@ class _SingleMealCardState extends State<_SingleMealCard> {
   Widget build(BuildContext context) {
     final card = widget.card;
     final connected = AppScope.of(context).connected;
-    final canReceive = !card.isCompleted && card.isCurrent && connected;
+    final hasRemaining = card.remainingDoses.isNotEmpty;
+    final canReceive =
+        !card.isCompleted && card.isCurrent && connected && hasRemaining;
 
     return Container(
       decoration: BoxDecoration(
@@ -1008,6 +1025,7 @@ class _SingleMealCardState extends State<_SingleMealCard> {
                 separatorBuilder: (_, __) => const Divider(height: 10),
                 itemBuilder: (context, idx) {
                   final dose = card.doses[idx];
+                  final isTaken = card.takenDrugIds.contains(dose.drug.id);
                   return InkWell(
                     onTap: () => Navigator.push(
                       context,
@@ -1028,10 +1046,14 @@ class _SingleMealCardState extends State<_SingleMealCard> {
                               height: 44,
                               child: dose.drug.labelImagePath == null
                                   ? Container(
-                                      color: card.color.withValues(alpha: 0.14),
+                                      color: isTaken
+                                          ? Colors.grey.shade200
+                                          : card.color.withValues(alpha: 0.14),
                                       child: Icon(
                                         Icons.medication_outlined,
-                                        color: card.color,
+                                        color: isTaken
+                                            ? Colors.grey
+                                            : card.color,
                                         size: 24,
                                       ),
                                     )
@@ -1048,23 +1070,65 @@ class _SingleMealCardState extends State<_SingleMealCard> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  dose.drug.name,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                    color: MeDisColors.text,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        dose.drug.name,
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                          color: isTaken
+                                              ? MeDisColors.muted
+                                              : MeDisColors.text,
+                                          decoration: isTaken
+                                              ? TextDecoration.lineThrough
+                                              : null,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (isTaken)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green
+                                              .withValues(alpha: 0.12),
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.check_circle_rounded,
+                                                size: 13, color: Colors.green),
+                                            SizedBox(width: 3),
+                                            Text(
+                                              'ทานแล้ว',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                                color: Colors.green,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  'ครั้งละ ${dose.quantity} เม็ด',
+                                  isTaken
+                                      ? 'ทานแล้ว ${dose.quantity} เม็ด'
+                                      : 'ครั้งละ ${dose.quantity} เม็ด',
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
-                                    color: card.color,
+                                    color: isTaken
+                                        ? MeDisColors.muted
+                                        : card.color,
                                   ),
                                 ),
                               ],
@@ -1093,8 +1157,11 @@ class _SingleMealCardState extends State<_SingleMealCard> {
                 ),
                 onPressed: (canReceive && !completing)
                     ? () async {
+                        final dosesToTake = card.remainingDoses.isNotEmpty
+                            ? card.remainingDoses
+                            : card.doses;
                         final confirmed =
-                            await _confirmMedicine(context, card.doses);
+                            await _confirmMedicine(context, dosesToTake);
                         if (confirmed && context.mounted) {
                           setState(() => completing = true);
                           try {
@@ -1114,18 +1181,21 @@ class _SingleMealCardState extends State<_SingleMealCard> {
                           color: Colors.white,
                         ),
                       )
-                    : Icon(card.isCompleted
+                    : Icon(card.isCompleted || !hasRemaining
                         ? Icons.check_circle_outline
                         : Icons.medication_outlined),
                 label: Text(
                   completing
                       ? 'กำลังดำเนินการ...'
-                      : card.isCompleted
+                      : (card.isCompleted || !hasRemaining)
                           ? 'ทานแล้ว'
                           : !connected
                               ? 'เชื่อมต่อเครื่องก่อนรับยา'
                               : card.isCurrent
-                                  ? 'รับยา'
+                                  ? (card.remainingDoses.length <
+                                          card.doses.length
+                                      ? 'รับยาที่เหลือ'
+                                      : 'รับยา')
                                   : 'ไม่ใช่มื้อปัจจุบัน',
                   style: const TextStyle(
                       fontSize: 17, fontWeight: FontWeight.w700),

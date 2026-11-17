@@ -543,9 +543,9 @@ class AppController extends ChangeNotifier {
   /// Update single slot remaining from ESP32 DISPENSE_SUCCESS event
   /// and record intake if live dispense occurred
   Future<void> _handleRemoteDispense(int slotNum, int remaining,
-      {int qty = 1}) async {
+      {int qty = 1, String? schedTime, String? medicine}) async {
     debugPrint(
-        '[BLE EVENT] Updating Slot $slotNum remaining from device: $remaining (qty: $qty)');
+        '[BLE EVENT] Updating Slot $slotNum remaining from device: $remaining (qty: $qty, sched: $schedTime, med: $medicine)');
     final currentSlots = List<DispenserSlot>.from(await _dispenser.slots());
     final index = currentSlots.indexWhere((s) => s.number == slotNum);
     if (index >= 0) {
@@ -557,29 +557,32 @@ class AppController extends ChangeNotifier {
       if (drug != null) {
         final now = _now();
         final isPrn = drug.isPrn;
-        final timeStr =
-            '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+        final timeStr = (schedTime != null && schedTime.length >= 5)
+            ? schedTime
+            : '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
         final mealType = isPrn ? null : _matchMealTypeFromTime(timeStr);
 
-        // Check if an intake record already exists to prevent duplicate entries
+        // Check if an intake record already exists for THIS drug today
         final alreadyExists = intakeHistory.any((h) {
+          if (!DateUtils.isSameDay(h.takenAt, now)) return false;
+          final matchesDrug = h.doses.any((d) =>
+              d.drug.id == drug.id ||
+              d.drug.name == drug.name ||
+              (medicine != null && d.drug.name == medicine));
+          if (!matchesDrug) return false;
           if (isPrn) {
-            return h.isPrn &&
-                h.doses.any((d) =>
-                    d.drug.id == drug.id || d.drug.name == drug.name) &&
-                DateUtils.isSameDay(h.takenAt, now) &&
-                h.takenAt.difference(now).inMinutes.abs() < 5;
+            return h.isPrn && h.takenAt.difference(now).inMinutes.abs() < 5;
           } else {
             return !h.isPrn &&
-                h.meal == mealType &&
-                DateUtils.isSameDay(h.takenAt, now) &&
-                h.takenAt.difference(now).inMinutes.abs() < 10;
+                (h.meal == mealType ||
+                    (mealType == null &&
+                        h.takenAt.difference(now).inMinutes.abs() < 30));
           }
         });
 
         if (!alreadyExists) {
           final record = IntakeRecord(
-            id: 'remote_${now.millisecondsSinceEpoch}_s$slotNum',
+            id: 'remote_${now.millisecondsSinceEpoch}_s${slotNum}_${drug.id}',
             takenAt: now,
             meal: mealType,
             isPrn: isPrn,
@@ -588,6 +591,27 @@ class AppController extends ChangeNotifier {
           );
           await _medications.saveIntake(record);
           intakeHistory = await _medications.intakeHistory();
+        }
+
+        // Check if all scheduled drugs for this meal have now been taken
+        if (mealType != null) {
+          final mealIdx = todayMeals.indexWhere((m) => m.type == mealType);
+          if (mealIdx >= 0) {
+            final meal = todayMeals[mealIdx];
+            final takenDrugIds = intakeHistory
+                .where((r) =>
+                    !r.isPrn &&
+                    r.meal == mealType &&
+                    DateUtils.isSameDay(r.takenAt, now))
+                .expand((r) => r.doses.map((d) => d.drug.id))
+                .toSet();
+            final allCompleted =
+                meal.drugs.every((dose) => takenDrugIds.contains(dose.drug.id));
+            if (allCompleted) {
+              todayMeals[mealIdx] =
+                  meal.copyWith(completed: true, completedAt: now);
+            }
+          }
         }
       }
 
@@ -759,15 +783,29 @@ class AppController extends ChangeNotifier {
           bleService.syncTime().catchError((_) => false);
           break;
 
+        case 'DAILY_DISPENSE_START':
+          isDispensing = true;
+          notifyListeners();
+          break;
+
+        case 'DAILY_DISPENSE_COMPLETE':
+          isDispensing = false;
+          _rebuildMeals();
+          notifyListeners();
+          break;
+
         case 'DISPENSE_SUCCESS':
           // ESP32 dispensed a pill
           final slot = data['slot'] as int?;
           final remaining = data['remaining'] as int?;
           final qty = data['qty'] as int? ?? 1;
+          final schedTime = data['sched_time'] as String?;
+          final medicine = data['medicine'] as String?;
           debugPrint(
-              '[BLE EVENT] Remote dispense: Slot $slot, remaining: $remaining, qty: $qty');
+              '[BLE EVENT] Remote dispense: Slot $slot, remaining: $remaining, qty: $qty, sched: $schedTime, med: $medicine');
           if (slot != null && remaining != null) {
-            _handleRemoteDispense(slot, remaining, qty: qty);
+            _handleRemoteDispense(slot, remaining,
+                qty: qty, schedTime: schedTime, medicine: medicine);
           }
           break;
 
@@ -954,14 +992,41 @@ class AppController extends ChangeNotifier {
       throw StateError('กดทานแล้วได้เฉพาะมื้อปัจจุบันเท่านั้น');
     }
 
+    // Determine which drugs for this meal have already been taken today
+    final today = now;
+    final alreadyTakenDrugIds = intakeHistory
+        .where((record) =>
+            !record.isPrn &&
+            record.meal == type &&
+            DateUtils.isSameDay(record.takenAt, today))
+        .expand((record) => record.doses.map((d) => d.drug.id))
+        .toSet();
+
+    // Filter candidate doses: only consume drugs NOT yet taken today
+    final candidates = doses ?? meal.drugs;
+    final dosesToConsume = candidates
+        .where((dose) => !alreadyTakenDrugIds.contains(dose.drug.id))
+        .toList();
+
+    // If all target drugs are already consumed, mark completed and return early safely
+    if (dosesToConsume.isEmpty) {
+      final allCompleted = meal.drugs.every((dose) =>
+          alreadyTakenDrugIds.contains(dose.drug.id));
+      if (allCompleted && !todayMeals[index].completed) {
+        todayMeals[index] =
+            todayMeals[index].copyWith(completed: true, completedAt: now);
+        notifyListeners();
+      }
+      return;
+    }
+
     isDispensing = true;
     notifyListeners();
     try {
-      final dosesToConsume = doses ?? meal.drugs;
       await _dispenser.consume(
           {for (final dose in dosesToConsume) dose.drug.id: dose.quantity});
       final intake = IntakeRecord(
-          id: now.microsecondsSinceEpoch.toString(),
+          id: '${now.microsecondsSinceEpoch}_${dosesToConsume.map((d) => d.drug.id).join('_')}',
           takenAt: now,
           meal: type,
           doses: dosesToConsume);
@@ -971,9 +1036,12 @@ class AppController extends ChangeNotifier {
 
       // Sync intake event to connected ESP32 so it records in history & updates schedule status
       if (bleService.isConnected && !bleService.isMock) {
-        final hourStr = meal.time.hour.toString().padLeft(2, '0');
-        final minuteStr = meal.time.minute.toString().padLeft(2, '0');
-        final schedTime = '$hourStr:$minuteStr';
+        final schedTime = switch (type) {
+          MealType.breakfast => '08:00',
+          MealType.lunch => '12:00',
+          MealType.dinner => '18:00',
+          MealType.bedtime => '21:00',
+        };
 
         for (final dose in dosesToConsume) {
           final slot =
@@ -994,8 +1062,7 @@ class AppController extends ChangeNotifier {
         }
       }
 
-      final today = now;
-      final todayIntakeDrugIds = intakeHistory
+      final updatedTakenIds = intakeHistory
           .where((record) =>
               !record.isPrn &&
               record.meal == type &&
@@ -1003,7 +1070,7 @@ class AppController extends ChangeNotifier {
           .expand((record) => record.doses.map((d) => d.drug.id))
           .toSet();
       final allCompleted =
-          meal.drugs.every((dose) => todayIntakeDrugIds.contains(dose.drug.id));
+          meal.drugs.every((dose) => updatedTakenIds.contains(dose.drug.id));
       if (allCompleted) {
         todayMeals[index] =
             todayMeals[index].copyWith(completed: true, completedAt: now);
