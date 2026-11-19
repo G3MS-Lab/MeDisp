@@ -15,15 +15,27 @@
  * Slot 4: "0110"
  * Slot 5: "0111"
  * Slot 6: "0101"
+ * Slot 7: "0100"
+ * Slot 8: "1100"
+ * Slot 9: "1101"
+ * Slot 10: "1111"
+ * Slot 11: "1110"
+ * Slot 12: "1010"
  */
 inline String getSlotGrayCode(int slot) {
   switch (slot) {
-    case 1: return "0001"; // Slot 1 Gray Code
-    case 2: return "0011"; // Slot 2 Gray Code
-    case 3: return "0010"; // Slot 3 Gray Code
-    case 4: return "0110"; // Slot 4 Gray Code
-    case 5: return "0111"; // Slot 5 Gray Code
-    case 6: return "0101"; // Slot 6 Gray Code
+    case 1:  return "0001"; // Slot 1 Gray Code
+    case 2:  return "0011"; // Slot 2 Gray Code
+    case 3:  return "0010"; // Slot 3 Gray Code
+    case 4:  return "0110"; // Slot 4 Gray Code
+    case 5:  return "0111"; // Slot 5 Gray Code
+    case 6:  return "0101"; // Slot 6 Gray Code
+    case 7:  return "0100"; // Slot 7 Gray Code
+    case 8:  return "1100"; // Slot 8 Gray Code
+    case 9:  return "1101"; // Slot 9 Gray Code
+    case 10: return "1111"; // Slot 10 Gray Code
+    case 11: return "1110"; // Slot 11 Gray Code
+    case 12: return "1010"; // Slot 12 Gray Code
     default: return "0001";
   }
 }

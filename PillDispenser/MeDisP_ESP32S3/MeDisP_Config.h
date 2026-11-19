@@ -55,7 +55,7 @@
 
 #define DEVICE_NAME "PillDispenser"
 #define DEVICE_ID "PD001"
-#define NUM_SLOTS 6
+#define NUM_SLOTS 12
 
 // ============================================================================
 // Storage File Paths (Dual Storage: SD Card with LittleFS fallback)

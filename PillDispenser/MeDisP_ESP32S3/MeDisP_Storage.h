@@ -134,7 +134,7 @@ inline void parseAndApplySlots(const String &jsonStr) {
 #if ARDUINOJSON_VERSION_MAJOR >= 7
   JsonDocument doc;
 #else
-  DynamicJsonDocument doc(2048);
+  DynamicJsonDocument doc(4096);
 #endif
   DeserializationError err = deserializeJson(doc, jsonStr);
   if (err) {
@@ -267,7 +267,7 @@ inline void saveSlotsToStorage() {
 #if ARDUINOJSON_VERSION_MAJOR >= 7
   JsonDocument doc;
 #else
-  DynamicJsonDocument doc(2048);
+  DynamicJsonDocument doc(4096);
 #endif
   JsonArray slotsArr = doc.createNestedArray("slots");
   for (int i = 0; i < NUM_SLOTS; i++) {
@@ -473,7 +473,7 @@ inline void setupStorage() {
   } else {
     initDefaultSlots();
     saveSlotsToStorage();
-    Serial.println("[STORAGE] Initialized clean empty slots 1-6 (no mock data).");
+    Serial.printf("[STORAGE] Initialized clean empty slots 1-%d (no mock data).\n", NUM_SLOTS);
   }
 
   // Load schedule if existing, otherwise initialize clean empty schedule

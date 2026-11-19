@@ -32,16 +32,27 @@ class PersistentDispenserRepository implements DispenserRepository {
     await _ble.disconnect();
   }
 
+  static const totalSlotsCount = 12;
+
   @override
   Future<List<DispenserSlot>> slots() async {
     final raw = (await SharedPreferences.getInstance()).getString(_key);
     if (raw == null) {
-      return List.generate(6, (index) => DispenserSlot(number: index + 1));
+      return List.generate(
+          totalSlotsCount, (index) => DispenserSlot(number: index + 1));
     }
-    return (jsonDecode(raw) as List)
+    final loaded = (jsonDecode(raw) as List)
         .cast<Map<String, dynamic>>()
         .map(_slotFromJson)
         .toList();
+    if (loaded.length < totalSlotsCount) {
+      for (var i = loaded.length + 1; i <= totalSlotsCount; i++) {
+        loaded.add(DispenserSlot(number: i));
+      }
+      await (await SharedPreferences.getInstance())
+          .setString(_key, jsonEncode(loaded.map(_slotToJson).toList()));
+    }
+    return loaded;
   }
 
   @override
@@ -136,11 +147,11 @@ class PersistentDispenserRepository implements DispenserRepository {
       } else {
         debugPrint(
             '[BLE SYNC] Slots payload is large (${bytes.length} bytes > 480B). Splitting into batches...');
-        for (var i = 0; i < slotsData.length; i += 2) {
+        for (var i = 0; i < slotsData.length; i += 4) {
           final batch = slotsData.sublist(
-              i, (i + 2 > slotsData.length) ? slotsData.length : i + 2);
+              i, (i + 4 > slotsData.length) ? slotsData.length : i + 4);
           await _ble.sendSlots(batch);
-          await Future<void>.delayed(const Duration(milliseconds: 60));
+          await Future<void>.delayed(const Duration(milliseconds: 100));
         }
         debugPrint('[BLE SYNC] ✓ sendSlots succeeded via batch splitting');
       }

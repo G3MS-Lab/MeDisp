@@ -64,7 +64,7 @@ void sendResponseToS3(const String &resp) {
 }
 
 // ----------------------------------------------------------------------------
-// Decode 4-bit Gray code back to Slot Number (1..6) for display
+// Decode 4-bit Gray code back to Slot Number (1..12) for display
 // ----------------------------------------------------------------------------
 int grayCodeToSlot(const String &code) {
   if (code == "0001") return 1;
@@ -73,6 +73,12 @@ int grayCodeToSlot(const String &code) {
   if (code == "0110") return 4;
   if (code == "0111") return 5;
   if (code == "0101") return 6;
+  if (code == "0100") return 7;
+  if (code == "1100") return 8;
+  if (code == "1101") return 9;
+  if (code == "1111") return 10;
+  if (code == "1110") return 11;
+  if (code == "1010") return 12;
   return -1;
 }
 
